@@ -323,7 +323,7 @@ window.addEventListener('resize', () => {
 // ── PWA Service Worker ──
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('./sw.js?v=1')
+        navigator.serviceWorker.register('./sw.js?v=2')
             .then((reg) => console.log('✓ SW registered:', reg.scope))
             .catch((err) => console.log('SW registration failed:', err));
     });
