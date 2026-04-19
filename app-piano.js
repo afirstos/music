@@ -6,8 +6,6 @@ const PianoApp = (function () {
     // CSS（所有类名带 piano- 前缀）
     // ════════════════════════════════════════════════════════════════
     const PIANO_CSS = `
-    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-
     .piano-controls-area {
         flex-shrink: 0; width: 100%; max-width: 600px;
         display: flex; flex-direction: column; gap: 4px;
@@ -551,9 +549,6 @@ const PianoApp = (function () {
     function $(sel) {
         return (_container || document).querySelector(sel);
     }
-    function $$(sel) {
-        return (_container || document).querySelectorAll(sel);
-    }
     function $id(id) {
         return (_container || document).querySelector('#' + id);
     }
@@ -607,29 +602,29 @@ const PianoApp = (function () {
     }
 
     function updateScoreUI() {
-        var allNotes = $$$('#scoreDisplay .piano-score-note[data-note]');
+        var allNotes = _container.querySelectorAll('#scoreDisplay .piano-score-note[data-note]');
         allNotes.forEach(function (el, i) {
             el.classList.remove('current', 'played');
             if (i < scoreIndex) el.classList.add('played');
             else if (i === scoreIndex) el.classList.add('current');
         });
-        var current = ($$$('#scoreDisplay .piano-score-note.current'))[0] || null;
-        if (current) current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        var current = (_container.querySelector('#scoreDisplay .piano-score-note.current')) || null;
+        if (current) {
+            var sc = $id('scoreDisplay');
+            var noteLeft = current.offsetLeft;
+            var noteWidth = current.offsetWidth;
+            var scWidth = sc.offsetWidth;
+            var scScrollLeft = sc.scrollLeft;
+            // 只在 scoreDisplay 内部滚动，不触发外层页面滚动
+            if (noteLeft - scScrollLeft < 10) {
+                sc.scrollLeft = noteLeft - 10;
+            } else if (noteLeft + noteWidth - scScrollLeft > scWidth - 10) {
+                sc.scrollLeft = noteLeft + noteWidth - scWidth + 10;
+            }
+        }
         var total = scoreRealNotes.length;
         var pct = total > 0 ? (scoreIndex / total) * 100 : 0;
         $id('scoreProgressBar').style.width = pct + '%';
-    }
-
-    // 用 container 内的 querySelectorAll（支持作用域查询）
-    function $$$$(selector) {
-        if (!_container) return [];
-        // 在 container 内查找匹配 selector 的元素
-        // 先尝试直接用 querySelectorAll
-        try {
-            return _container.querySelectorAll(selector);
-        } catch (e) {
-            return [];
-        }
     }
 
     function checkScoreInput(note) {
@@ -652,7 +647,7 @@ const PianoApp = (function () {
             _setTimeout(function () { highlightNextNote(); }, 100);
         } else {
             combo = 0;
-            var wrongEl = $$('.piano-piano-container [data-note="' + note + '"]')[0] || null;
+            var wrongEl = _container.querySelectorAll('.piano-piano-container [data-note="' + note + '"]')[0] || null;
             if (wrongEl) {
                 wrongEl.style.animation = 'piano-shake 0.3s ease';
                 _setTimeout(function () { wrongEl.style.animation = ''; }, 300);
@@ -667,7 +662,7 @@ const PianoApp = (function () {
         var nextNote = scoreRealNotes[scoreIndex];
         var mappedNote = mapSongNoteToCurrent(nextNote);
         if (mappedNote) {
-            var el = $$('.piano-piano-container [data-note="' + mappedNote + '"]')[0] || null;
+            var el = _container.querySelectorAll('.piano-piano-container [data-note="' + mappedNote + '"]')[0] || null;
             if (el) {
                 el.classList.add('highlight');
                 var isBlack = el.classList.contains('piano-black-key');
@@ -680,7 +675,7 @@ const PianoApp = (function () {
     }
 
     function clearScoreHighlights(animate) {
-        $$('.highlight').forEach(function (el) {
+        _container.querySelectorAll('.highlight').forEach(function (el) {
             el.classList.remove('highlight');
             var flame = el.querySelector('.piano-key-flame');
             if (flame) {
