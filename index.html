@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="description" content="音乐工坊 — 钢琴、颂钵、空灵鼓，一体演奏">
+<meta name="theme-color" content="#1a1212">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="音乐工坊">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>🎵 音乐工坊</title>
+<style>
+/* ===== Shell 全局 ===== */
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { height: 100%; overflow: hidden; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    height: 100%; height: 100dvh;
+    overflow: hidden; user-select: none;
+    background: #1a1a2e;
+}
+
+/* ===== 导航栏 ===== */
+.shell-nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 500;
+    display: flex; align-items: center; justify-content: center;
+    padding: 6px 0 4px;
+    background: rgba(26, 26, 46, 0.95);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.shell-tabs {
+    display: flex; gap: 4px;
+    position: relative;
+}
+.shell-tab {
+    padding: 6px 16px;
+    border: none; border-radius: 20px;
+    background: transparent;
+    color: rgba(255,255,255,0.5);
+    font-size: 13px; font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    position: relative;
+    z-index: 2;
+    touch-action: manipulation;
+    white-space: nowrap;
+}
+.shell-tab.active {
+    color: #fff;
+    background: rgba(201, 168, 76, 0.25);
+}
+.shell-indicator {
+    position: absolute;
+    bottom: 0;
+    height: 2px;
+    background: #c9a84c;
+    border-radius: 2px;
+    transition: left 0.3s ease, width 0.3s ease;
+}
+
+/* ===== 页面容器 ===== */
+.shell-pages {
+    width: 100%; height: 100dvh;
+    position: relative;
+    overflow: hidden;
+}
+.shell-page {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    /* 滑动切换 */
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease;
+    will-change: transform, opacity;
+}
+.shell-page.active {
+    transform: translateX(0); opacity: 1; z-index: 1;
+    pointer-events: auto;
+}
+.shell-page.left {
+    transform: translateX(-100%); opacity: 0.5; z-index: 0;
+    pointer-events: none;
+}
+.shell-page.right {
+    transform: translateX(100%); opacity: 0.5; z-index: 0;
+    pointer-events: none;
+}
+
+/* 每个页面内容区需要考虑导航栏高度 */
+.shell-page .page-content {
+    flex: 1;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    /* 给导航栏留空间 */
+    padding-top: 42px;
+}
+
+/* ===== 钢琴页面浅色背景 ===== */
+#page-piano .page-content {
+    background: linear-gradient(180deg, #f5f5f5 0%, #e8e8e8 100%);
+    padding: 42px 8px env(safe-area-inset-bottom, 4px);
+}
+
+/* ===== 颂钵/空灵鼓页面深色背景 ===== */
+#page-songbo .page-content {
+    background: #1a1212;
+}
+#page-kongling .page-content {
+    background: #0e0e1a;
+}
+
+/* ===== 横屏 ===== */
+@media (orientation: landscape) {
+    .shell-nav { padding: 2px 0 2px; }
+    .shell-tab { padding: 4px 12px; font-size: 12px; }
+    .shell-page .page-content { padding-top: 34px; }
+    #page-piano .page-content { padding-top: 34px; padding-left: 8px; padding-right: 8px; }
+}
+</style>
+</head>
+<body>
+
+<!-- 导航栏 -->
+<nav class="shell-nav">
+    <div class="shell-tabs" id="shellTabs">
+        <button class="shell-tab active" data-index="0">🎹 钢琴</button>
+        <button class="shell-tab" data-index="1">🥁 颂钵</button>
+        <button class="shell-tab" data-index="2">🎵 空灵鼓</button>
+        <div class="shell-indicator" id="shellIndicator"></div>
+    </div>
+</nav>
+
+<!-- 页面容器 -->
+<div class="shell-pages" id="shellPages">
+    <div class="shell-page active" id="page-piano"><div class="page-content" id="pianoContainer"></div></div>
+    <div class="shell-page right" id="page-songbo"><div class="page-content" id="songboContainer"></div></div>
+    <div class="shell-page right" id="page-kongling"><div class="page-content" id="konglingContainer"></div></div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// Music Hub Shell — 滑动切换导航
+// ════════════════════════════════════════════════════════════════
+
+const APP_NAMES = ['piano', 'songbo', 'kongling'];
+const APP_MODULES = {};  // { piano: { attachKeyboard, detachKeyboard, destroy }, ... }
+let currentPage = 0;
+let appHandlers = {};    // { piano: { keydown, keyup, ... }, ... }
+
+// ── 导航指示器 ──
+function updateIndicator() {
+    const tabs = document.querySelectorAll('.shell-tab');
+    const indicator = document.getElementById('shellIndicator');
+    const activeTab = tabs[currentPage];
+    if (activeTab && indicator) {
+        const tabsRect = document.getElementById('shellTabs').getBoundingClientRect();
+        const tabRect = activeTab.getBoundingClientRect();
+        indicator.style.left = (tabRect.left - tabsRect.left) + 'px';
+        indicator.style.width = tabRect.width + 'px';
+    }
+}
+
+// ── 切换页面 ──
+function switchPage(index, direction) {
+    if (index === currentPage) return;
+    const pages = document.querySelectorAll('.shell-page');
+    const tabs = document.querySelectorAll('.shell-tab');
+
+    // detach keyboard from current app
+    detachCurrentKeyboard();
+
+    // direction: 1 = left→right, -1 = right→left
+    if (!direction) direction = index > currentPage ? 1 : -1;
+
+    // update page classes
+    pages.forEach((p, i) => {
+        p.classList.remove('active', 'left', 'right');
+        if (i === index) p.classList.add('active');
+        else if (i < index) p.classList.add('left');
+        else p.classList.add('right');
+    });
+
+    // update tabs
+    tabs.forEach((t, i) => t.classList.toggle('active', i === index));
+
+    currentPage = index;
+    updateIndicator();
+
+    // attach keyboard to new app
+    attachCurrentKeyboard();
+}
+
+// ── 键盘绑定管理 ──
+function detachCurrentKeyboard() {
+    const name = APP_NAMES[currentPage];
+    const app = APP_MODULES[name];
+    if (app && app.detachKeyboard) app.detachKeyboard();
+}
+
+function attachCurrentKeyboard() {
+    const name = APP_NAMES[currentPage];
+    const app = APP_MODULES[name];
+    if (app && app.attachKeyboard) app.attachKeyboard();
+}
+
+// ── 滑动手势 ──
+let touchStartX = 0, touchStartY = 0, touchStartTime = 0, touchMoved = false;
+const SWIPE_THRESHOLD = 50;
+const SWIPE_TIME_LIMIT = 400;
+
+const pagesEl = document.getElementById('shellPages');
+pagesEl.addEventListener('touchstart', (e) => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartTime = Date.now();
+    touchMoved = false;
+}, { passive: true });
+
+pagesEl.addEventListener('touchmove', (e) => {
+    touchMoved = true;
+}, { passive: true });
+
+pagesEl.addEventListener('touchend', (e) => {
+    if (!touchMoved) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    const dt = Date.now() - touchStartTime;
+
+    // 只处理水平滑动（忽略竖向滚动和斜向滑动）
+    if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dy) > Math.abs(dx) * 0.7) return;
+    if (dt > SWIPE_TIME_LIMIT) return;
+
+    if (dx < 0 && currentPage < APP_NAMES.length - 1) {
+        // 左滑 → 下一页
+        switchPage(currentPage + 1, 1);
+    } else if (dx > 0 && currentPage > 0) {
+        // 右滑 → 上一页
+        switchPage(currentPage - 1, -1);
+    }
+}, { passive: true });
+
+// ── Tab 按钮事件 ──
+document.querySelectorAll('.shell-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        const idx = parseInt(tab.dataset.index);
+        switchPage(idx);
+    });
+});
+
+// ── 初始化各 App ──
+async function initApps() {
+    // 动态加载 app scripts
+    const scriptPromises = APP_NAMES.map(name => {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = `app-${name}.js`;
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+        });
+    });
+
+    try {
+        await Promise.all(scriptPromises);
+    } catch (err) {
+        console.error('Failed to load app scripts:', err);
+    }
+
+    // 初始化每个 app
+    APP_NAMES.forEach((name, i) => {
+        const container = document.getElementById(name + 'Container');
+        const AppClass = window[name.charAt(0).toUpperCase() + name.slice(1) + 'App'];
+        if (AppClass && AppClass.init) {
+            const app = AppClass.init(container);
+            APP_MODULES[name] = app;
+        }
+    });
+
+    // 初始键盘绑定
+    attachCurrentKeyboard();
+    updateIndicator();
+}
+
+// ── 窗口大小变化 ──
+window.addEventListener('resize', () => {
+    updateIndicator();
+});
+
+// ── PWA Service Worker ──
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js?v=1')
+            .then((reg) => console.log('✓ SW registered:', reg.scope))
+            .catch((err) => console.log('SW registration failed:', err));
+    });
+}
+
+// ── 启动 ──
+initApps();
+</script>
+</body>
+</html>

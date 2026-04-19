@@ -1,0 +1,831 @@
+// app-piano.js — Piano module for Music Hub
+// Exports: { init(container), destroy(container) }
+
+const PianoApp = (function () {
+    // ════════════════════════════════════════════════════════════════
+    // CSS（所有类名带 piano- 前缀）
+    // ════════════════════════════════════════════════════════════════
+    const PIANO_CSS = `
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    .piano-controls-area {
+        flex-shrink: 0; width: 100%; max-width: 600px;
+        display: flex; flex-direction: column; gap: 4px;
+        padding-top: 2px;
+    }
+    .piano-score-controls {
+        display: flex; align-items: center; gap: 6px;
+    }
+    .piano-octave-control {
+        display: flex; align-items: center; gap: 4px;
+        margin-left: auto; flex-shrink: 0;
+    }
+    .piano-octave-btn {
+        width: 32px; height: 32px; border: none; border-radius: 6px;
+        background: #e0e0e0; color: #323232; font-size: 16px; font-weight: 700;
+        cursor: pointer; display: flex; align-items: center; justify-content: center;
+        transition: background 0.15s; touch-action: manipulation;
+    }
+    .piano-octave-btn:active { background: #c0c0c0; }
+    .piano-octave-label {
+        font-size: 12px; color: #666; min-width: 54px; text-align: center; font-weight: 500;
+    }
+    .piano-score-btn {
+        padding: 4px 10px; border: 1px solid #d0d0d0; border-radius: 6px;
+        background: #fff; color: #323232; font-size: 11px; cursor: pointer;
+        transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
+        touch-action: manipulation;
+    }
+    .piano-score-btn:active { background: #e8e8e8; }
+    .piano-score-btn.active { background: #4a7ab5; color: #fff; border-color: #4a7ab5; }
+    .piano-score-select {
+        padding: 4px 6px; border: 1px solid #d0d0d0; border-radius: 6px;
+        font-size: 11px; color: #323232; background: #fff; flex: 1;
+        max-width: 140px; touch-action: manipulation;
+    }
+    .piano-score-display {
+        display: flex; gap: 2px; overflow-x: auto; padding: 4px 3px;
+        background: #fff; border-radius: 6px; border: 1px solid #e0e0e0;
+        scrollbar-width: thin; -webkit-overflow-scrolling: touch;
+        min-height: 42px; max-height: 42px; align-items: center;
+        touch-action: pan-x;
+    }
+    .piano-score-display::-webkit-scrollbar { height: 2px; }
+    .piano-score-display::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
+    .piano-score-note {
+        display: inline-flex; flex-direction: column; align-items: center;
+        justify-content: center; min-width: 32px; height: 34px;
+        border-radius: 5px; font-size: 11px; font-weight: 600;
+        flex-shrink: 0; transition: all 0.2s;
+    }
+    .piano-score-note.white-note { background: #f5f5f5; color: #333; border: 1.5px solid #ddd; }
+    .piano-score-note.black-note { background: #3a3a3a; color: #fff; border: 1.5px solid #222; }
+    .piano-score-note.current { transform: scale(1.15); box-shadow: 0 0 0 2px #4a7ab5; z-index: 1; }
+    .piano-score-note.played { opacity: 0.35; transform: scale(0.9); }
+    .piano-score-note .note-label { font-size: 10px; line-height: 1; }
+    .piano-score-progress {
+        width: 100%; height: 2px; background: #e0e0e0; border-radius: 2px;
+        overflow: hidden; flex-shrink: 0;
+    }
+    .piano-score-progress-bar {
+        height: 100%; background: #4a7ab5; border-radius: 2px;
+        transition: width 0.2s; width: 0%;
+    }
+    .piano-piano-container {
+        width: 100%; max-width: 600px;
+        padding: 8px; background: #fafafa; border-radius: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        display: flex; flex-direction: column; min-height: 0;
+        margin-top: 4px;
+        flex: 1;
+        max-height: 55dvh;
+    }
+    .piano-keys-wrapper {
+        flex: 1; position: relative; width: 100%; min-height: 0;
+    }
+    .piano-white-keys {
+        display: flex; width: 100%; height: 100%; gap: 1.5px;
+        position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    }
+    .piano-white-key {
+        flex: 1; background: linear-gradient(180deg, #fff 0%, #f0f0f0 100%);
+        border: 1px solid #d0d0d0; border-radius: 0 0 5px 5px;
+        cursor: pointer; position: relative; transition: all 0.08s ease;
+        display: flex; flex-direction: column; align-items: center;
+        justify-content: flex-end; padding-bottom: 4px; user-select: none;
+        touch-action: none;
+    }
+    .piano-white-key:active, .piano-white-key.active {
+        background: linear-gradient(180deg, #c8dcf0 0%, #b8d0e8 100%);
+        border-color: #90b0d0; transform: translateY(2px);
+    }
+    .piano-white-key.highlight {
+        background: linear-gradient(180deg, #ffe0b2 0%, #ffcc80 100%) !important;
+        border-color: #ffb74d !important;
+    }
+    .piano-key-flame {
+        position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+        font-size: 20px; pointer-events: none; z-index: 20;
+        animation: piano-flame-float 0.8s ease-in-out infinite;
+        filter: drop-shadow(0 0 4px rgba(255,100,0,0.6));
+    }
+    .piano-black-key .piano-key-flame {
+        top: -10px; font-size: 16px;
+        filter: drop-shadow(0 0 6px rgba(100,180,255,0.8));
+    }
+    @keyframes piano-flame-float {
+        0%, 100% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+        50% { transform: translateX(-50%) translateY(-4px) scale(1.15); opacity: 0.85; }
+    }
+    @keyframes piano-flame-out {
+        0% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; }
+        100% { transform: translateX(-50%) translateY(-20px) scale(0.3); opacity: 0; }
+    }
+    .piano-white-key .piano-note-name { font-size: 9px; color: #aaa; font-weight: 400; line-height: 1.1; }
+    .piano-white-key .piano-label { font-size: 11px; color: #505050; font-weight: 600; }
+
+    .piano-black-keys {
+        position: absolute; top: 0; left: 0; width: 100%; height: 58%;
+        pointer-events: none; overflow: visible;
+    }
+    .piano-black-key {
+        position: absolute; width: 7.5%; height: 100%;
+        background: linear-gradient(180deg, #4a4a4a 0%, #2a2a2a 100%);
+        border: 1px solid #1a1a1a; border-radius: 0 0 3px 3px;
+        cursor: pointer; pointer-events: auto; transition: all 0.08s ease;
+        display: flex; align-items: flex-end; justify-content: center;
+        padding-bottom: 4px; user-select: none; overflow: visible;
+        touch-action: none;
+    }
+    .piano-black-key:active, .piano-black-key.active {
+        background: linear-gradient(180deg, #6a5a8a 0%, #5a4a7a 100%);
+        border-color: #4a3a6a; transform: translateY(2px);
+    }
+    .piano-black-key.highlight {
+        background: linear-gradient(180deg, #e65100 0%, #bf360c 100%) !important;
+        border-color: #e65100 !important;
+    }
+    .piano-black-key .piano-label { font-size: 9px; color: #fff; font-weight: 500; line-height: 1.1; text-align: center; }
+    .piano-black-key .piano-label .shortcut { display: block; font-size: 11px; font-weight: 600; margin-bottom: 1px; }
+    .piano-black-key .piano-label .piano-note-name { display: block; font-size: 8px; opacity: 0.6; }
+
+    .piano-status-bar {
+        flex-shrink: 0; padding: 4px 12px; background: #f0f0f0;
+        border-radius: 6px; text-align: center; min-height: 24px;
+        width: 100%; max-width: 600px; margin-top: 4px;
+    }
+    .piano-status-text { font-size: 12px; color: #323232; font-weight: 500; }
+    .piano-hint { flex-shrink: 0; margin-top: 3px; font-size: 10px; color: #999; text-align: center; }
+    .piano-install-hint {
+        display: none; flex-shrink: 0; margin-top: 3px; font-size: 10px; color: #5a8a5a;
+        text-align: center; background: #e8f5e8; padding: 4px 10px;
+        border-radius: 6px; width: 100%; max-width: 600px;
+    }
+
+    @keyframes piano-shake {
+        0%, 100% { transform: translateX(0); }
+        20% { transform: translateX(-3px); }
+        40% { transform: translateX(3px); }
+        60% { transform: translateX(-2px); }
+        80% { transform: translateX(2px); }
+    }
+
+    @media (orientation: landscape) {
+        .piano-controls-area { padding-top: 0; gap: 2px; }
+        .piano-score-controls { gap: 4px; }
+        .piano-octave-btn { width: 28px; height: 28px; font-size: 14px; }
+        .piano-octave-label { font-size: 11px; min-width: 48px; }
+        .piano-score-btn { padding: 3px 8px; font-size: 10px; }
+        .piano-score-select { padding: 3px 4px; font-size: 10px; max-width: 110px; }
+        .piano-score-display { min-height: 32px; max-height: 32px; padding: 2px 3px; }
+        .piano-score-note { min-width: 26px; height: 26px; font-size: 9px; }
+        .piano-piano-container { padding: 4px; border-radius: 6px; margin-top: 2px; height: auto; flex: 1; }
+        .piano-status-bar { padding: 2px 10px; min-height: 20px; margin-top: 2px; }
+        .piano-status-text { font-size: 11px; }
+        .piano-hint { display: none; }
+        .piano-install-hint { display: none; }
+    }
+
+    @media (max-width: 360px) {
+        .piano-white-key .piano-label { font-size: 10px; }
+        .piano-white-key .piano-note-name { font-size: 8px; }
+        .piano-black-key .piano-label { font-size: 8px; }
+        .piano-black-key .piano-label .shortcut { font-size: 10px; }
+        .piano-black-key .piano-label .piano-note-name { font-size: 7px; }
+    }
+`;
+
+    // HTML 模板（注入到 container 内）
+    const PIANO_HTML = `<div class="piano-controls-area">
+    <div class="piano-score-controls">
+        <button class="piano-score-btn" id="scoreToggle">📖 曲谱</button>
+        <select class="piano-score-select" id="songSelect">
+            <option value="twinkle">小星星</option>
+            <option value="ode">欢乐颂</option>
+            <option value="birthday">生日快乐</option>
+            <option value="canon">卡农 (简单版)</option>
+            <option value="mary">玛丽的小羊羔</option>
+            <option value="sennen">千年盛开 (Sahaja)</option>
+            <option value="ganesha">Ganesha Vandana</option>
+            <option value="omnamah">Om Namah Shivaya</option>
+        </select>
+        <button class="piano-score-btn" id="scoreReset" style="display:none">↺</button>
+        <div class="piano-octave-control">
+            <button class="piano-octave-btn" id="octDown">−</button>
+            <span class="piano-octave-label" id="octaveLabel">C4 – B5</span>
+            <button class="piano-octave-btn" id="octUp">+</button>
+        </div>
+    </div>
+    <div class="piano-score-display" id="scoreDisplay" style="display:none"></div>
+    <div class="piano-score-progress" id="scoreProgressWrap" style="display:none"><div class="piano-score-progress-bar" id="scoreProgressBar"></div></div>
+</div>
+<div class="piano-piano-container">
+    <div class="piano-keys-wrapper">
+        <div class="piano-white-keys" id="whiteKeys"></div>
+        <div class="piano-black-keys" id="blackKeys"></div>
+    </div>
+</div>
+<div class="piano-status-bar"><div class="piano-status-text" id="statusText">点击琴键开始演奏</div></div>
+<div class="piano-hint">触摸/鼠标演奏 · 键盘 A~' 白键 W E T Y U I O 黑键 · Z/X 切换八度</div>`;
+
+    // ════════════════════════════════════════════════════════════════
+    // 音符系统
+    // ════════════════════════════════════════════════════════════════
+    const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const WHITE_NOTE_NAMES = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+    const BLACK_NOTE_INDICES = [1, 3, 6, 8, 10];
+
+    function getFrequency(noteName, octave) {
+        const noteIndex = NOTE_NAMES.indexOf(noteName);
+        const midi = (octave + 1) * 12 + noteIndex;
+        return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    let baseOctave = 4;
+    const MIN_OCTAVE = 2;
+    const MAX_OCTAVE = 6;
+
+    const WHITE_SHORTCUTS = ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L', ';', "'", '', '', ''];
+    const BLACK_SHORTCUTS_FLAT = ['W', 'E', 'T', 'Y', 'U', 'I', 'O'];
+
+    function generateKeys() {
+        const whiteKeys = [], blackKeys = [];
+        let blackCount = 0;
+        for (let oct = baseOctave; oct <= baseOctave + 1; oct++) {
+            WHITE_NOTE_NAMES.forEach((name) => {
+                whiteKeys.push({ note: `${name}${oct}`, freq: getFrequency(name, oct) });
+            });
+            BLACK_NOTE_INDICES.forEach((idx) => {
+                blackKeys.push({
+                    note: `${NOTE_NAMES[idx]}${oct}`,
+                    freq: getFrequency(NOTE_NAMES[idx], oct),
+                    shortcut: blackCount < BLACK_SHORTCUTS_FLAT.length ? BLACK_SHORTCUTS_FLAT[blackCount] : '',
+                    octOffset: oct - baseOctave
+                });
+                blackCount++;
+            });
+        }
+        return { whiteKeys, blackKeys };
+    }
+
+    function getBlackKeyPosition(octOffset, whiteKeyIdx) {
+        const totalWhites = 14;
+        const pos = octOffset * 7 + whiteKeyIdx;
+        const gapCenter = pos + 0.5;
+        const pct = (gapCenter / totalWhites) * 100;
+        return pct - 3.75;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 音频引擎
+    // ════════════════════════════════════════════════════════════════
+    const MAX_POLYPHONY = 10;
+    let activeOscillators = [];
+    let audioContext = null;
+
+    function initAudio() {
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioContext.state === 'suspended') audioContext.resume();
+    }
+
+    function playNote(frequency) {
+        initAudio();
+        if (activeOscillators.length >= MAX_POLYPHONY) {
+            const oldest = activeOscillators.shift();
+            try { oldest.forEach(o => o.stop()); } catch (e) { }
+        }
+        const now = audioContext.currentTime;
+        const lpf = audioContext.createBiquadFilter();
+        lpf.type = 'lowpass';
+        lpf.frequency.setValueAtTime(Math.min(frequency * 6, 8000), now);
+        lpf.frequency.linearRampToValueAtTime(Math.min(frequency * 3, 4000), now + 0.5);
+        lpf.Q.setValueAtTime(0.7, now);
+        lpf.connect(audioContext.destination);
+        const masterGain = audioContext.createGain();
+        masterGain.gain.setValueAtTime(0.5, now);
+        masterGain.connect(lpf);
+        const oscs = [];
+
+        const o1 = audioContext.createOscillator(), g1 = audioContext.createGain();
+        o1.type = 'triangle'; o1.frequency.setValueAtTime(frequency, now);
+        g1.gain.setValueAtTime(0, now);
+        g1.gain.linearRampToValueAtTime(0.5, now + 0.01);
+        g1.gain.linearRampToValueAtTime(0.35, now + 0.1);
+        g1.gain.linearRampToValueAtTime(0.25, now + 0.8);
+        g1.gain.linearRampToValueAtTime(0, now + 2.0);
+        o1.connect(g1); g1.connect(masterGain);
+        o1.start(now); o1.stop(now + 2.0); oscs.push(o1);
+
+        const o2 = audioContext.createOscillator(), g2 = audioContext.createGain();
+        o2.type = 'sine'; o2.frequency.setValueAtTime(frequency * 2, now);
+        g2.gain.setValueAtTime(0, now);
+        g2.gain.linearRampToValueAtTime(0.15, now + 0.01);
+        g2.gain.linearRampToValueAtTime(0.08, now + 0.15);
+        g2.gain.linearRampToValueAtTime(0, now + 1.2);
+        o2.connect(g2); g2.connect(masterGain);
+        o2.start(now); o2.stop(now + 1.2); oscs.push(o2);
+
+        const o3 = audioContext.createOscillator(), g3 = audioContext.createGain();
+        o3.type = 'sine'; o3.frequency.setValueAtTime(frequency * 3, now);
+        g3.gain.setValueAtTime(0, now);
+        g3.gain.linearRampToValueAtTime(0.06, now + 0.005);
+        g3.gain.linearRampToValueAtTime(0.02, now + 0.08);
+        g3.gain.linearRampToValueAtTime(0, now + 0.6);
+        o3.connect(g3); g3.connect(masterGain);
+        o3.start(now); o3.stop(now + 0.6); oscs.push(o3);
+
+        activeOscillators.push(oscs);
+        setTimeout(() => {
+            const idx = activeOscillators.indexOf(oscs);
+            if (idx !== -1) activeOscillators.splice(idx, 1);
+        }, 2100);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 曲谱系统
+    // ════════════════════════════════════════════════════════════════
+    const SONGS = {
+        twinkle: {
+            name: '小星星',
+            notes: ['C4', 'C4', 'G4', 'G4', 'A4', 'A4', 'G4', '_', 'F4', 'F4', 'E4', 'E4', 'D4', 'D4', 'C4', '_',
+                'G4', 'G4', 'F4', 'F4', 'E4', 'E4', 'D4', '_', 'G4', 'G4', 'F4', 'F4', 'E4', 'E4', 'D4', '_',
+                'C4', 'C4', 'G4', 'G4', 'A4', 'A4', 'G4', '_', 'F4', 'F4', 'E4', 'E4', 'D4', 'D4', 'C4']
+        },
+        ode: {
+            name: '欢乐颂',
+            notes: ['E4', 'E4', 'F4', 'G4', 'G4', 'F4', 'E4', 'D4', 'C4', 'C4', 'D4', 'E4', 'E4', '_', 'D4', 'D4',
+                'E4', 'E4', 'F4', 'G4', 'G4', 'F4', 'E4', 'D4', 'C4', 'C4', 'D4', 'E4', 'D4', '_', 'C4', 'C4']
+        },
+        birthday: {
+            name: '生日快乐',
+            notes: ['C4', 'C4', 'D4', 'C4', 'F4', 'E4', '_', 'C4', 'C4', 'D4', 'C4', 'G4', 'F4', '_',
+                'C4', 'C4', 'C5', 'A4', 'F4', 'E4', 'D4', '_', 'A#4', 'A#4', 'A4', 'F4', 'G4', 'F4']
+        },
+        canon: {
+            name: '卡农 (简单版)',
+            notes: ['E5', 'D5', 'C5', 'B4', 'A4', 'G4', 'A4', 'B4', 'C5', 'B4', 'A4', 'G4', 'F4', 'E4', 'F4', 'G4',
+                'A4', 'G4', 'F4', 'E4', 'D4', 'C4', 'D4', 'E4']
+        },
+        mary: {
+            name: '玛丽的小羊羔',
+            notes: ['E4', 'D4', 'C4', 'D4', 'E4', 'E4', 'E4', '_', 'D4', 'D4', 'D4', '_', 'E4', 'G4', 'G4', '_',
+                'E4', 'D4', 'C4', 'D4', 'E4', 'E4', 'E4', 'E4', 'D4', 'D4', 'E4', 'D4', 'C4']
+        },
+        sennen: {
+            name: '千年盛开 (Sahaja)',
+            notes: [
+                'A4', '_', 'A4', 'B4', 'C5', '_', 'B4', 'A4',
+                'G4', '_', 'G4', 'A4', 'B4', '_', 'A4', 'G4',
+                'F4', '_', 'F4', 'G4', 'A4', 'C5', '_', 'A4',
+                'E4', '_', 'E4', 'F4', 'G4', '_', 'F4', 'E4',
+                'A4', 'C5', 'E5', '_', 'D5', 'C5', 'B4', '_', 'A4',
+                'G4', 'B4', 'D5', '_', 'C5', 'B4', 'A4', '_', 'G4',
+                'F4', 'A4', 'C5', '_', 'B4', 'A4', 'G4', 'F4', '_', 'E4',
+                'A4', '_', 'G4', '_', 'A4'
+            ]
+        },
+        ganesha: {
+            name: 'Ganesha Vandana (Sahaja)',
+            notes: [
+                'G4', 'A4', 'B4', 'C5', '_', 'B4', 'A4', 'G4', '_',
+                'E4', 'G4', 'A4', 'G4', '_', 'E4', 'D4', 'E4', '_',
+                'G4', 'G4', 'A4', 'B4', 'C5', 'B4', '_', 'A4', 'G4',
+                'E4', 'F4', 'G4', 'A4', '_', 'G4', 'E4', '_',
+                'C5', 'B4', 'A4', 'G4', '_', 'A4', 'B4', 'C5', '_',
+                'G4', 'A4', 'B4', '_', 'A4', 'G4', 'E4', '_',
+                'D4', 'E4', 'G4', 'A4', 'G4', '_', 'E4', 'D4', '_', 'C4'
+            ]
+        },
+        omnamah: {
+            name: 'Om Namah Shivaya (Sahaja)',
+            notes: [
+                'E4', '_', 'E4', 'D4', 'E4', '_', 'G4', 'G4', 'E4', '_',
+                'A4', '_', 'A4', 'G4', 'A4', '_', 'C5', 'B4', 'A4', '_',
+                'G4', 'E4', 'G4', 'A4', '_', 'G4', 'E4', 'D4', '_', 'E4', '_',
+                'A4', 'G4', 'E4', '_', 'D4', 'E4', 'G4', '_', 'E4', '_',
+                'G4', 'A4', 'C5', '_', 'B4', 'A4', 'G4', 'E4', '_',
+                'D4', 'E4', 'G4', 'A4', '_', 'G4', '_', 'E4'
+            ]
+        }
+    };
+
+    let scoreMode = false;
+    let currentSong = 'twinkle';
+    let scoreIndex = 0;
+    let scoreNotes = [];
+    let scoreRealNotes = [];
+    let combo = 0;
+
+    function mapSongNoteToCurrent(note) {
+        if (note === '_') return null;
+        const match = note.match(/^([A-G]#?)(\d)$/);
+        if (!match) return null;
+        const [, name, oct] = match;
+        const targetOct = parseInt(oct);
+        if (targetOct >= baseOctave && targetOct <= baseOctave + 1) return note;
+        return null;
+    }
+
+    // ── 模块级状态：container 引用，供内部函数使用 ──
+    let _container = null;
+
+    // ── 定时器 ID 收集（destroy 时清理）──
+    let _timers = [];
+
+    function _setTimeout(fn, ms) {
+        const id = setTimeout(fn, ms);
+        _timers.push(id);
+        return id;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 初始化
+    // ════════════════════════════════════════════════════════════════
+    function init(container) {
+        _container = container;
+
+        // 1. 注入 CSS（注入到 container 前面）
+        if (container.parentElement) {
+            container.insertAdjacentHTML('beforebegin', '<style>' + PIANO_CSS + '</style>');
+        } else {
+            document.head.insertAdjacentHTML('beforeend', '<style>' + PIANO_CSS + '</style>');
+        }
+
+        // 2. 注入 HTML
+        container.innerHTML = PIANO_HTML;
+
+        // 3. 获取 DOM 引用
+        const pianoContainerEl = container.querySelector('.piano-piano-container');
+
+        // 4. 构建钢琴
+        buildPiano();
+
+        // 5. 触摸事件绑定在 piano-container 上
+        pianoContainerEl.addEventListener('touchstart', handleTouchStart, { passive: false });
+        pianoContainerEl.addEventListener('touchmove', handleTouchMove, { passive: false });
+        pianoContainerEl.addEventListener('touchend', handleTouchEnd, { passive: false });
+        pianoContainerEl.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+        // 6. 按钮事件
+        container.querySelector('#octDown').addEventListener('click', function () { shiftOctave(-1); });
+        container.querySelector('#octUp').addEventListener('click', function () { shiftOctave(1); });
+        container.querySelector('#scoreToggle').addEventListener('click', toggleScoreMode);
+        container.querySelector('#songSelect').addEventListener('change', function (e) { loadSong(e.target.value); });
+        container.querySelector('#scoreReset').addEventListener('click', function () { loadSong(currentSong); });
+
+        // 7. install hint（简化逻辑）
+        if (!window.matchMedia('(display-mode: fullscreen)').matches &&
+            !window.matchMedia('(display-mode: standalone)').matches &&
+            !window.navigator.standalone) {
+            var ih = container.querySelector('.piano-install-hint');
+            if (ih) ih.style.display = 'block';
+        }
+
+        // 8. 存储 keyboard / mouse handlers 到 container 上
+        container._keydownHandler = function (e) {
+            if (e.repeat) return;
+            const key = e.key.toLowerCase();
+            if (key === 'z') { shiftOctave(-1); return; }
+            if (key === 'x') { shiftOctave(1); return; }
+            if (KEYBOARD_MAP[key]) {
+                const note = KEYBOARD_MAP[key];
+                const el = container.querySelector(`.piano-piano-container [data-note="${note}"]`);
+                if (el) activateKey(el, note);
+            }
+        };
+        container._keyupHandler = function (e) {
+            const key = e.key.toLowerCase();
+            if (KEYBOARD_MAP[key]) {
+                const note = KEYBOARD_MAP[key];
+                const el = container.querySelector(`.piano-piano-container [data-note="${note}"]`);
+                if (el) deactivateKey(el);
+            }
+        };
+
+        container._mousedownHandler = function (e) {
+            mouseIsDown = true; initAudio();
+            const el = getKeyElementAt(e.clientX, e.clientY);
+            if (el) { mouseActiveKey = el; activateKey(el, el.dataset.note); }
+        };
+        container._mousemoveHandler = function (e) {
+            if (!mouseIsDown) return;
+            const newEl = getKeyElementAt(e.clientX, e.clientY);
+            if (newEl !== mouseActiveKey) {
+                if (mouseActiveKey) deactivateKey(mouseActiveKey);
+                if (newEl) { mouseActiveKey = newEl; activateKey(newEl, newEl.dataset.note); }
+                else mouseActiveKey = null;
+            }
+        };
+        container._mouseupHandler = function () {
+            mouseIsDown = false;
+            if (mouseActiveKey) deactivateKey(mouseActiveKey);
+            mouseActiveKey = null;
+        };
+    }
+
+    function destroy(container) {
+        if (!container) container = _container;
+        // 清理定时器
+        _timers.forEach(function (id) { clearTimeout(id); });
+        _timers = [];
+        // 清理音频
+        try {
+            if (audioContext && audioContext.state !== 'closed') audioContext.close();
+        } catch (e) { }
+        audioContext = null;
+        activeOscillators = [];
+        // 清除 handler 引用
+        if (container) {
+            container._keydownHandler = null;
+            container._keyupHandler = null;
+            container._mousedownHandler = null;
+            container._mousemoveHandler = null;
+            container._mouseupHandler = null;
+        }
+        _container = null;
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 辅助函数：通过 container 查询 DOM
+    // ════════════════════════════════════════════════════════════════
+    function $(sel) {
+        return (_container || document).querySelector(sel);
+    }
+    function $$(sel) {
+        return (_container || document).querySelectorAll(sel);
+    }
+    function $id(id) {
+        return (_container || document).querySelector('#' + id);
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 曲谱系统函数
+    // ════════════════════════════════════════════════════════════════
+    function toggleScoreMode() {
+        scoreMode = !scoreMode;
+        $id('scoreToggle').classList.toggle('active', scoreMode);
+        $id('scoreDisplay').style.display = scoreMode ? 'flex' : 'none';
+        $id('scoreProgressWrap').style.display = scoreMode ? 'block' : 'none';
+        $id('songSelect').style.display = scoreMode ? 'block' : 'none';
+        $id('scoreReset').style.display = scoreMode ? 'inline-block' : 'none';
+        if (scoreMode) loadSong(currentSong);
+        else { clearScoreHighlights(false); $id('statusText').textContent = '点击琴键开始演奏'; }
+    }
+
+    function loadSong(songId) {
+        currentSong = songId;
+        scoreIndex = 0; combo = 0;
+        scoreNotes = SONGS[songId].notes;
+        scoreRealNotes = scoreNotes.filter(function (n) { return n !== '_'; });
+        renderScore();
+        highlightNextNote();
+    }
+
+    function renderScore() {
+        var scContainer = $id('scoreDisplay');
+        scContainer.innerHTML = '';
+        scoreNotes.forEach(function (note) {
+            if (note === '_') {
+                var rest = document.createElement('div');
+                rest.className = 'piano-score-note';
+                rest.style.background = 'transparent';
+                rest.style.border = 'none';
+                rest.style.minWidth = '14px';
+                rest.style.color = '#ccc';
+                rest.textContent = '\u00B7';
+                scContainer.appendChild(rest);
+                return;
+            }
+            var el = document.createElement('div');
+            var isBlack = note.includes('#');
+            el.className = 'piano-score-note ' + (isBlack ? 'black-note' : 'white-note');
+            el.dataset.note = note;
+            el.innerHTML = '<span class="note-label">' + note.replace('#', '\u266F') + '</span>';
+            scContainer.appendChild(el);
+        });
+        updateScoreUI();
+    }
+
+    function updateScoreUI() {
+        var allNotes = $$$('#scoreDisplay .piano-score-note[data-note]');
+        allNotes.forEach(function (el, i) {
+            el.classList.remove('current', 'played');
+            if (i < scoreIndex) el.classList.add('played');
+            else if (i === scoreIndex) el.classList.add('current');
+        });
+        var current = ($$$('#scoreDisplay .piano-score-note.current'))[0] || null;
+        if (current) current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        var total = scoreRealNotes.length;
+        var pct = total > 0 ? (scoreIndex / total) * 100 : 0;
+        $id('scoreProgressBar').style.width = pct + '%';
+    }
+
+    // 用 container 内的 querySelectorAll（支持作用域查询）
+    function $$$$(selector) {
+        if (!_container) return [];
+        // 在 container 内查找匹配 selector 的元素
+        // 先尝试直接用 querySelectorAll
+        try {
+            return _container.querySelectorAll(selector);
+        } catch (e) {
+            return [];
+        }
+    }
+
+    function checkScoreInput(note) {
+        if (!scoreMode) return;
+        if (scoreIndex >= scoreRealNotes.length) {
+            $id('statusText').textContent = '\uD83C\uDF89 太棒了！全部弹完！最高连击 ' + combo;
+            clearScoreHighlights(true);
+            scoreIndex = 0; combo = 0;
+            _setTimeout(function () { updateScoreUI(); highlightNextNote(); }, 800);
+            return;
+        }
+        var targetNote = scoreRealNotes[scoreIndex];
+        if (note === targetNote) {
+            combo++;
+            clearScoreHighlights(true);
+            scoreIndex++;
+            var comboText = combo >= 3 ? ' \uD83D\uDD25\xD7' + combo : '';
+            $id('statusText').textContent = '\uD83C\uDFB5 ' + note + comboText;
+            updateScoreUI();
+            _setTimeout(function () { highlightNextNote(); }, 100);
+        } else {
+            combo = 0;
+            var wrongEl = $$('.piano-piano-container [data-note="' + note + '"]')[0] || null;
+            if (wrongEl) {
+                wrongEl.style.animation = 'piano-shake 0.3s ease';
+                _setTimeout(function () { wrongEl.style.animation = ''; }, 300);
+            }
+            $id('statusText').textContent = '\u2717 应弹 ' + targetNote;
+        }
+    }
+
+    function highlightNextNote() {
+        clearScoreHighlights(false);
+        if (scoreIndex >= scoreRealNotes.length) return;
+        var nextNote = scoreRealNotes[scoreIndex];
+        var mappedNote = mapSongNoteToCurrent(nextNote);
+        if (mappedNote) {
+            var el = $$('.piano-piano-container [data-note="' + mappedNote + '"]')[0] || null;
+            if (el) {
+                el.classList.add('highlight');
+                var isBlack = el.classList.contains('piano-black-key');
+                var flame = document.createElement('span');
+                flame.className = 'piano-key-flame';
+                flame.textContent = isBlack ? '\uD83D\uDC99' : '\uD83D\uDD25';
+                el.appendChild(flame);
+            }
+        }
+    }
+
+    function clearScoreHighlights(animate) {
+        $$('.highlight').forEach(function (el) {
+            el.classList.remove('highlight');
+            var flame = el.querySelector('.piano-key-flame');
+            if (flame) {
+                if (animate) {
+                    flame.style.animation = 'piano-flame-out 0.3s ease-out forwards';
+                    _setTimeout(function () { flame.remove(); }, 300);
+                } else {
+                    flame.remove();
+                }
+            }
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 琴键渲染
+    // ════════════════════════════════════════════════════════════════
+    let currentWhiteKeys = [];
+    let currentBlackKeys = [];
+    const BLACK_KEY_WHITE_POSITIONS = [0, 1, 3, 4, 5];
+    let KEYBOARD_MAP = {};
+
+    function buildPiano() {
+        var keys = generateKeys();
+        currentWhiteKeys = keys.whiteKeys;
+        currentBlackKeys = keys.blackKeys;
+
+        $id('whiteKeys').innerHTML = '';
+        $id('blackKeys').innerHTML = '';
+
+        keys.whiteKeys.forEach(function (k, i) {
+            var el = document.createElement('div');
+            el.className = 'piano-white-key';
+            el.dataset.note = k.note;
+            var shortcut = i < WHITE_SHORTCUTS.length ? WHITE_SHORTCUTS[i] : '';
+            el.innerHTML = '<span class="piano-note-name">' + k.note.replace('#', '\u266F') + '</span><span class="piano-label">' + shortcut + '</span>';
+            $id('whiteKeys').appendChild(el);
+        });
+
+        keys.blackKeys.forEach(function (k, i) {
+            var octIdx = k.octOffset;
+            var posInOct = BLACK_KEY_WHITE_POSITIONS[i % 5];
+            var leftPct = getBlackKeyPosition(octIdx, posInOct);
+            var el = document.createElement('div');
+            el.className = 'piano-black-key';
+            el.dataset.note = k.note;
+            el.style.left = leftPct + '%';
+            el.innerHTML = '<span class="piano-label"><span class="shortcut">' + k.shortcut + '</span><span class="piano-note-name">' + k.note.replace('#', '\u266F') + '</span></span>';
+            $id('blackKeys').appendChild(el);
+        });
+
+        $id('octaveLabel').textContent = 'C' + baseOctave + ' \u2013 B' + (baseOctave + 1);
+        buildKeyboardMap();
+        if (scoreMode) highlightNextNote();
+    }
+
+    function buildKeyboardMap() {
+        KEYBOARD_MAP = {};
+        var wShortcuts = 'asdfghjkl;\'';
+        var bShortcuts = 'wetyuio';
+        currentWhiteKeys.forEach(function (k, i) {
+            if (i < wShortcuts.length) KEYBOARD_MAP[wShortcuts[i]] = k.note;
+        });
+        var bOrder = [0, 1, 2, 3, 4, 5, 6];
+        bOrder.forEach(function (idx, i) {
+            if (i < bShortcuts.length && idx < currentBlackKeys.length) {
+                KEYBOARD_MAP[bShortcuts[i]] = currentBlackKeys[idx].note;
+            }
+        });
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 琴键交互
+    // ════════════════════════════════════════════════════════════════
+    const touchActiveKeys = new Map();
+    let mouseIsDown = false, mouseActiveKey = null;
+
+    function activateKey(keyElement, note) {
+        if (!keyElement || keyElement.classList.contains('active')) return;
+        keyElement.classList.add('active');
+        var k = currentWhiteKeys.concat(currentBlackKeys).find(function (x) { return x.note === note; });
+        if (k) playNote(k.freq);
+        $id('statusText').textContent = '\uD83C\uDFB5 ' + note;
+        checkScoreInput(note);
+    }
+
+    function deactivateKey(keyElement) {
+        if (!keyElement) return;
+        keyElement.classList.remove('active');
+    }
+
+    function getKeyElementAt(x, y) {
+        var el = document.elementFromPoint(x, y);
+        if (!el) return null;
+        if (el.classList.contains('piano-white-key') || el.classList.contains('piano-black-key')) return el;
+        return el.closest('.piano-white-key, .piano-black-key') || null;
+    }
+
+    function handleTouchStart(e) {
+        e.preventDefault(); initAudio();
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            var touch = e.changedTouches[i];
+            var el = getKeyElementAt(touch.clientX, touch.clientY);
+            if (el) { touchActiveKeys.set(touch.identifier, el); activateKey(el, el.dataset.note); }
+        }
+    }
+
+    function handleTouchMove(e) {
+        e.preventDefault();
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            var touch = e.changedTouches[i];
+            if (!touchActiveKeys.has(touch.identifier)) continue;
+            var newEl = getKeyElementAt(touch.clientX, touch.clientY);
+            var prev = touchActiveKeys.get(touch.identifier);
+            if (newEl !== prev) {
+                if (prev) deactivateKey(prev);
+                if (newEl) { touchActiveKeys.set(touch.identifier, newEl); activateKey(newEl, newEl.dataset.note); }
+                else touchActiveKeys.delete(touch.identifier);
+            }
+        }
+    }
+
+    function handleTouchEnd(e) {
+        e.preventDefault();
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            var touch = e.changedTouches[i];
+            var el = touchActiveKeys.get(touch.identifier);
+            if (el) deactivateKey(el);
+            touchActiveKeys.delete(touch.identifier);
+        }
+    }
+
+    // ════════════════════════════════════════════════════════════════
+    // 八度切换
+    // ════════════════════════════════════════════════════════════════
+    function shiftOctave(delta) {
+        var next = baseOctave + delta;
+        if (next < MIN_OCTAVE || next > MAX_OCTAVE) return;
+        baseOctave = next;
+        buildPiano();
+    }
+
+    return { init: init, destroy: destroy };
+})();
+
+// Attach to window for external access
+if (typeof window !== 'undefined') {
+    window.PianoApp = PianoApp;
+}
