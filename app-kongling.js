@@ -27,7 +27,7 @@ const CSS = `
 .kongling-drum-face{width:100%;height:100%;border-radius:50%;background:var(--drum-face-bg);border:4px solid var(--drum-rim-dark);box-shadow:0 0 0 6px var(--drum-rim),0 0 0 10px var(--drum-rim-dark),0 0 40px rgba(0,0,0,.6),inset 0 0 60px rgba(0,0,0,.4);position:relative}
 .kongling-drum-face::after{content:'';position:absolute;inset:-20px;border-radius:50%;background:radial-gradient(ellipse at 50% 50%,var(--tongue-shadow) 0%,transparent 70%);opacity:.15;animation:kongling-breathe 4s ease-in-out infinite;pointer-events:none;z-index:0}
 @keyframes kongling-breathe{0%,100%{opacity:.08;transform:scale(.95)}50%{opacity:.2;transform:scale(1.05)}}
-.kongling-tongue{position:absolute;width:72px;height:72px;border-radius:50%;background:var(--tongue-bg);border:2px solid var(--drum-rim-dark);box-shadow:0 3px 8px rgba(0,0,0,.4),inset 0 1px 2px rgba(255,255,255,.25);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform .1s,box-shadow .1s;z-index:2;transform:translate(-50%,-50%)}
+.kongling-tongue{position:absolute;width:72px;height:72px;border-radius:50%;touch-action:manipulation;background:var(--tongue-bg);border:2px solid var(--drum-rim-dark);box-shadow:0 3px 8px rgba(0,0,0,.4),inset 0 1px 2px rgba(255,255,255,.25);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;transition:transform .1s,box-shadow .1s;z-index:2;transform:translate(-50%,-50%)}
 .kongling-tongue:hover{box-shadow:0 3px 8px rgba(0,0,0,.4),inset 0 1px 2px rgba(255,255,255,.25),0 0 16px var(--tongue-shadow)}
 .kongling-tongue.hit{transform:translate(-50%,-50%) scale(.88);background:var(--tongue-active);box-shadow:0 1px 4px rgba(0,0,0,.3),0 0 24px var(--tongue-shadow)}
 .kongling-tongue .kongling-note-name{font-size:14px;font-weight:700;color:var(--tongue-text);line-height:1}
@@ -40,16 +40,16 @@ const CSS = `
 @keyframes kongling-shake{0%,100%{transform:translate(-50%,-50%) translateX(0)}20%{transform:translate(-50%,-50%) translateX(-5px)}40%{transform:translate(-50%,-50%) translateX(5px)}60%{transform:translate(-50%,-50%) translateX(-4px)}80%{transform:translate(-50%,-50%) translateX(3px)}}
 .kongling-ripple{position:absolute;border-radius:50%;border:2px solid var(--accent);opacity:.7;pointer-events:none;animation:kongling-rippleOut .8s ease-out forwards;z-index:1}
 @keyframes kongling-rippleOut{0%{width:20px;height:20px;opacity:.7;transform:translate(-50%,-50%) scale(0)}100%{width:160px;height:160px;opacity:0;transform:translate(-50%,-50%) scale(1)}}
-.kongling-star-particle{position:fixed;font-size:16px;pointer-events:none;z-index:200;animation:kongling-starFly .7s ease-out forwards}
+.kongling-star-particle{position:absolute;font-size:16px;pointer-events:none;z-index:200;animation:kongling-starFly .7s ease-out forwards}
 @keyframes kongling-starFly{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--dx),var(--dy)) scale(.3)}}
-.kongling-combo-display{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:28px;font-weight:800;color:var(--accent);pointer-events:none;z-index:150;opacity:0;transition:opacity .3s;text-shadow:0 0 20px var(--tongue-shadow)}
+.kongling-combo-display{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:28px;font-weight:800;color:var(--accent);pointer-events:none;z-index:150;opacity:0;transition:opacity .3s;text-shadow:0 0 20px var(--tongue-shadow)}
 .kongling-combo-display.show{opacity:1;animation:kongling-comboPop .5s ease-out}
 @keyframes kongling-comboPop{0%{transform:translate(-50%,-50%) scale(.5)}50%{transform:translate(-50%,-50%) scale(1.2)}100%{transform:translate(-50%,-50%) scale(1)}}
 .kongling-status-bar{padding:10px 16px;background:rgba(14,14,26,.92);display:flex;align-items:center;justify-content:center;gap:12px;font-size:13px;min-height:44px;flex-shrink:0}
 .kongling-status-msg{color:var(--text-dim);transition:color .2s}
 .kongling-status-msg.error{color:var(--error)}
 .kongling-status-msg.success{color:var(--success)}
-.kongling-finish-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:300}
+.kongling-finish-overlay{position:absolute;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;z-index:300}
 .kongling-finish-overlay.show{display:flex}
 .kongling-finish-box{background:#1e1e32;border:2px solid var(--accent);border-radius:16px;padding:32px 40px;text-align:center;box-shadow:0 0 40px rgba(0,0,0,.5)}
 .kongling-finish-box .kongling-emoji{font-size:48px;margin-bottom:12px}
@@ -65,9 +65,10 @@ const HTML_TEMPLATE = `
 <div class="kongling-top-bar">
     <label>音阶</label>
     <select class="kongling-scale-select">
+        <option value="C">🎵 C 大调</option>
         <option value="D">D 大调</option>
-        <option value="C">C 五声</option>
         <option value="G">G 大调</option>
+        <option value="F">🧘 F 五声</option>
     </select>
     <label>配色</label>
     <select class="kongling-theme-select">
@@ -77,11 +78,7 @@ const HTML_TEMPLATE = `
     </select>
     <button class="kongling-score-toggle">📖 曲谱</button>
     <select class="kongling-song-select" style="display:none">
-        <option value="twinkle">小星星</option>
-        <option value="ode">欢乐颂</option>
-        <option value="birthday">生日快乐</option>
-        <option value="sea">沧海一声笑</option>
-        <option value="bigfish">大鱼</option>
+        <!-- 动态生成 by buildSongSelect() -->
     </select>
     <button class="kongling-restart-btn" style="display:none">↺ 重来</button>
 </div>
@@ -112,25 +109,55 @@ const HTML_TEMPLATE = `
 // ── Constants ──
 const SCALES = {
     D: { name:'D 大调', notes:['D4','E4','F#4','A4','B4','D5','E5','F#5'], freqs:[293.66,329.63,369.99,440.00,493.88,587.33,659.25,739.99] },
-    C: { name:'C 五声', notes:['C4','D4','E4','G4','A4','C5','D5','E5'], freqs:[261.63,293.66,329.63,392.00,440.00,523.25,587.33,659.25] },
-    G: { name:'G 大调', notes:['G3','A3','B3','D4','E4','G4','A4','B4'], freqs:[196.00,220.00,246.94,293.66,329.63,392.00,440.00,493.88] }
+    C: { name:'C 大调', notes:['C4','D4','E4','F4','G4','A4','B4','C5'], freqs:[261.63,293.66,329.63,349.23,392.00,440.00,493.88,523.25] },
+    G: { name:'G 大调', notes:['G3','A3','B3','D4','E4','G4','A4','B4'], freqs:[196.00,220.00,246.94,293.66,329.63,392.00,440.00,493.88] },
+    F: { name:'F 五声', notes:['F3','G3','A3','C4','D4','F4','G4','A4'], freqs:[174.61,196.00,220.00,261.63,293.66,349.23,392.00,440.00] }
 };
 const KEY_MAP = ['a','s','d','f','j','k','l',';'];
 const TONGUE_POSITIONS = [
     {left:35,top:78},{left:65,top:78},{left:22,top:56},{left:78,top:56},{left:50,top:54},
     {left:30,top:33},{left:70,top:33},{left:50,top:15}
 ];
-const SONGS = {
-    twinkle: { name:'小星星', degrees:[1,1,5,5,6,6,5,4,4,3,3,2,2,1,5,5,4,4,3,3,2,5,5,4,4,3,3,2,1,1,5,5,6,6,5,4,4,3,3,2,2,1] },
-    ode: { name:'欢乐颂', degrees:[3,3,4,5,5,4,3,2,1,1,2,3,3,2,2,3,3,4,5,5,4,3,2,1,1,2,3,2,1,1] },
-    birthday: { name:'生日快乐', degrees:[1,1,2,1,4,3,1,1,2,1,5,4,1,1,8,6,4,3,2,7,7,6,4,5,4] },
-    sea: { name:'沧海一声笑', degrees:[8,6,5,3,1,1,3,5,6,8,8,6,5,3,5,3,2,1,3,2,1] },
-    bigfish: { name:'大鱼', degrees:[3,4,5,6,5,3,2,3,4,5,3,6,5,3,2,1,2,3,5,3,2,1] }
-};
+const SONGS = MusicSongs.songs;
+var resolvedNotes = []; // resolveNotes() 后的鼓舌编号列表
+
+function getScaleNoteNames() {
+    return SCALES[currentScale].notes;
+}
+
+function resolveCurrentSong() {
+    if (!currentSong) { resolvedNotes = []; return; }
+    var notes = currentSong.notes || (SONGS[currentSong] && SONGS[currentSong].notes);
+    if (!notes) { resolvedNotes = []; return; }
+    resolvedNotes = MusicSongs.resolveNotes(notes, getScaleNoteNames());
+}
+
+function buildSongSelect() {
+    var sel = _container.querySelector('.kongling-song-select'); sel.innerHTML = '';
+    var scaleNames = getScaleNoteNames();
+    MusicSongs.groups.forEach(function (g) {
+        var optgroup = document.createElement('optgroup');
+        optgroup.label = g.label;
+        var hasAny = false;
+        g.keys.forEach(function (k) {
+            var song = MusicSongs.songs[k];
+            if (song.fit === 'piano') return;
+            var check = MusicSongs.checkPlayable(song.notes, scaleNames);
+            var label = song.name;
+            if (check.unplayable > 0) label += ' ⚠️(' + check.unplayable + '音不可弹)';
+            var opt = document.createElement('option');
+            opt.value = k; opt.textContent = label;
+            opt.title = check.unplayable > 0 ? check.unplayable + '个音在当前音阶下无法弹奏' : '所有音均可弹奏';
+            optgroup.appendChild(opt);
+            hasAny = true;
+        });
+        if (hasAny) sel.appendChild(optgroup);
+    });
+}
 
 // ── State ──
 let _container = null;
-let currentScale = 'D';
+let currentScale = 'C';
 const MAX_VOICES = 12;
 let activeVoices = [];
 let tongueEls = [];
@@ -164,8 +191,8 @@ function muteAll() {
     activeVoices.forEach(v => { try{v.output.gain.cancelScheduledValues(now);v.output.gain.setValueAtTime(v.output.gain.value,now);v.output.gain.linearRampToValueAtTime(0,now+0.08);}catch(e){} });
     activeVoices = [];
     const msg = _container.querySelector('.kongling-status-msg-el');
-    msg.textContent = '🤚 止音'; msg.className = 'kongling-status-msg';
-    setTimeout(() => { if(msg.textContent==='🤚 止音'){msg.textContent=scoreMode?'跟着提示弹奏':'按下鼓舌或键盘演奏';msg.className='kongling-status-msg';} }, 800);
+    if (msg) { msg.textContent = '🤚 止音'; msg.className = 'kongling-status-msg'; }
+    setTimeout(() => { if(msg && msg.textContent==='🤚 止音'){msg.textContent=scoreMode?'跟着提示弹奏':'按下鼓舌或键盘演奏';msg.className='kongling-status-msg';} }, 800);
 }
 
 function buildTongues() {
@@ -177,7 +204,8 @@ function buildTongues() {
         el.style.left = TONGUE_POSITIONS[i].left + '%'; el.style.top = TONGUE_POSITIONS[i].top + '%';
         el.innerHTML = `<span class="kongling-star-hint">✨</span><span class="kongling-note-name">${scale.notes[i]}</span><span class="kongling-key-hint">${KEY_MAP[i].toUpperCase()}</span>`;
         el.dataset.index = i;
-        el.addEventListener('pointerdown', e => { e.preventDefault(); hitTongue(i, e); });
+        el.addEventListener('touchstart', e => { e.preventDefault(); hitTongue(i, e.touches[0]); }, { passive: false });
+        el.addEventListener('mousedown', e => { hitTongue(i, e); });
         drumFace.appendChild(el); tongueEls.push(el);
     }
 }
@@ -185,7 +213,7 @@ function buildTongues() {
 function hitTongue(index, event) {
     playNote(index); animateHit(index); createRipple(index, event);
     if (scoreMode && currentSong) checkScore(index);
-    else { const msg = _container.querySelector('.kongling-status-msg-el'); msg.textContent = `🎵 ${SCALES[currentScale].notes[index]}`; msg.className = 'kongling-status-msg'; }
+    else { const msg = _container.querySelector('.kongling-status-msg-el'); if (msg) { msg.textContent = `🎵 ${SCALES[currentScale].notes[index]}`; msg.className = 'kongling-status-msg'; } }
 }
 
 function animateHit(index) { const el = tongueEls[index]; el.classList.add('hit'); setTimeout(() => el.classList.remove('hit'), 150); }
@@ -217,7 +245,8 @@ function toggleScoreMode() {
 
 function loadSong(songId) {
     const song = SONGS[songId]; if (!song) return;
-    currentSong = { ...song, id: songId }; songIndex = 0; combo = 0; hideCombo();
+    currentSong = { id: songId, name: song.name, notes: song.notes }; songIndex = 0; combo = 0; hideCombo();
+    resolveCurrentSong();
     renderScore(); highlightNextTongue();
     const msg = _container.querySelector('.kongling-status-msg-el');
     msg.textContent = `🎵 ${song.name} — 跟着提示弹奏`; msg.className = 'kongling-status-msg';
@@ -226,9 +255,19 @@ function loadSong(songId) {
 function renderScore() {
     const track = _container.querySelector('.kongling-score-track-el'); track.innerHTML = '';
     const scale = SCALES[currentScale];
-    currentSong.degrees.forEach((deg, i) => {
+    currentSong.notes.forEach(function (n, i) {
         const noteEl = document.createElement('div'); noteEl.className = 'kongling-score-note';
-        noteEl.innerHTML = `<span>${scale.notes[deg-1]}</span><span style="font-size:9px;opacity:.5;margin-top:1px">${deg}</span>`;
+        if (n === '_') {
+            noteEl.innerHTML = '<span>·</span>';
+        } else {
+            var deg = resolvedNotes[i];
+            if (deg === -2) {
+                noteEl.innerHTML = '<span style="opacity:.35">' + n + '</span><span style="font-size:9px;opacity:.35;margin-top:1px">?</span>';
+                noteEl.title = '当前音阶无法弹奏此音';
+            } else {
+                noteEl.innerHTML = '<span>' + n + '</span><span style="font-size:9px;opacity:.5;margin-top:1px">' + (deg >= 0 ? (deg+1) : '?') + '</span>';
+            }
+        }
         noteEl.dataset.idx = i; track.appendChild(noteEl);
     });
     updateScoreScroll(); updateProgress();
@@ -243,20 +282,27 @@ function updateScoreScroll() {
 }
 
 function updateProgress() {
-    if (!currentSong) return;
-    _container.querySelector('.kongling-progress-fill-el').style.width = (songIndex / currentSong.degrees.length * 100) + '%';
+    if (!currentSong || !resolvedNotes.length) return;
+    _container.querySelector('.kongling-progress-fill-el').style.width = (songIndex / resolvedNotes.length * 100) + '%';
 }
 
 function highlightNextTongue() {
-    tongueEls.forEach(el => el.querySelector('.kongling-star-hint').classList.remove('visible'));
-    if (!currentSong || songIndex >= currentSong.degrees.length) return;
-    tongueEls[currentSong.degrees[songIndex]-1].querySelector('.kongling-star-hint').classList.add('visible');
+    tongueEls.forEach(function(el) { el.querySelector('.kongling-star-hint').classList.remove('visible'); });
+    if (!currentSong || songIndex >= resolvedNotes.length) return;
+    var idx = resolvedNotes[songIndex];
+    if (idx >= 0 && tongueEls[idx]) tongueEls[idx].querySelector('.kongling-star-hint').classList.add('visible');
 }
 
 function checkScore(playedIndex) {
-    if (!currentSong || songIndex >= currentSong.degrees.length) return;
-    const expectedDeg = currentSong.degrees[songIndex]; const expectedIdx = expectedDeg - 1;
+    if (!currentSong || songIndex >= resolvedNotes.length) return;
+    var expectedIdx = resolvedNotes[songIndex];
     const msg = _container.querySelector('.kongling-status-msg-el');
+    // 跳过休止符和无法映射的音符
+    if (expectedIdx < 0) {
+        songIndex++; updateScoreScroll(); updateProgress(); highlightNextTongue();
+        if (songIndex >= resolvedNotes.length) songFinished();
+        return;
+    }
     if (playedIndex === expectedIdx) {
         combo++;
         const noteEl = _container.querySelector('.kongling-score-track-el').children[songIndex];
@@ -264,29 +310,31 @@ function checkScore(playedIndex) {
         spawnStarParticles(playedIndex);
         if (combo >= 3) showCombo(combo);
         songIndex++; updateScoreScroll(); updateProgress(); highlightNextTongue();
-        msg.textContent = combo >= 3 ? `✨×${combo} 连击！` : '✓ 正确'; msg.className = 'kongling-status-msg success';
-        if (songIndex >= currentSong.degrees.length) songFinished();
+        if (msg) { msg.textContent = combo >= 3 ? `✨×${combo} 连击！` : '✓ 正确'; msg.className = 'kongling-status-msg success'; }
+        if (songIndex >= resolvedNotes.length) songFinished();
     } else {
         combo = 0; hideCombo(); const scale = SCALES[currentScale];
-        msg.textContent = `✗ 应弹 ${scale.notes[expectedIdx]}`; msg.className = 'kongling-status-msg error';
+        if (msg) { msg.textContent = `✗ 应弹 ${scale.notes[expectedIdx]}`; msg.className = 'kongling-status-msg error'; }
         const noteEl = _container.querySelector('.kongling-score-track-el').children[songIndex];
         if (noteEl) { noteEl.classList.add('missed'); setTimeout(() => noteEl.classList.remove('missed'), 600); }
-        tongueEls[playedIndex].classList.add('wrong'); setTimeout(() => tongueEls[playedIndex].classList.remove('wrong'), 400);
-        const starEl = tongueEls[expectedIdx].querySelector('.kongling-star-hint');
-        starEl.style.animation = 'none'; starEl.offsetHeight; starEl.style.animation = 'kongling-starFlash .5s ease 2';
+        if (tongueEls[playedIndex]) { tongueEls[playedIndex].classList.add('wrong'); setTimeout(() => tongueEls[playedIndex].classList.remove('wrong'), 400); }
+        const starEl = tongueEls[expectedIdx] && tongueEls[expectedIdx].querySelector('.kongling-star-hint');
+        if (starEl) { starEl.style.animation = 'none'; starEl.offsetHeight; starEl.style.animation = 'kongling-starFlash .5s ease 2'; }
     }
 }
 
 function spawnStarParticles(index) {
     const el = tongueEls[index]; const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    const containerRect = _container.getBoundingClientRect();
+    const cx = rect.left - containerRect.left + rect.width / 2;
+    const cy = rect.top - containerRect.top + rect.height / 2;
     for (let i = 0; i < 5; i++) {
         const star = document.createElement('div'); star.className = 'kongling-star-particle'; star.textContent = '✨';
         const angle = Math.random() * Math.PI * 2, dist = 40 + Math.random() * 60;
         star.style.left = cx + 'px'; star.style.top = cy + 'px';
         star.style.setProperty('--dx', Math.cos(angle)*dist+'px');
         star.style.setProperty('--dy', Math.sin(angle)*dist+'px');
-        document.body.appendChild(star); setTimeout(() => star.remove(), 700);
+        _container.appendChild(star); setTimeout(() => star.remove(), 700);
     }
 }
 
@@ -335,6 +383,7 @@ function init(container) {
     _container.querySelector('.kongling-scale-select').addEventListener('change', () => {
         currentScale = _container.querySelector('.kongling-scale-select').value;
         buildTongues();
+        buildSongSelect();
         if (scoreMode && currentSong) {
             const si = songIndex, co = combo; loadSong(currentSong.id); songIndex = si; combo = co;
             const notes = _container.querySelector('.kongling-score-track-el').children;
@@ -351,8 +400,21 @@ function init(container) {
         if (val === 'copper') appEl.classList.add('theme-copper');
     });
 
+    buildSongSelect();
     _container.querySelector('.kongling-score-toggle').addEventListener('click', toggleScoreMode);
-    _container.querySelector('.kongling-song-select').addEventListener('change', () => { if (scoreMode) loadSong(_container.querySelector('.kongling-song-select').value); });
+    _container.querySelector('.kongling-song-select').addEventListener('change', () => {
+        if (scoreMode) {
+            var songId = _container.querySelector('.kongling-song-select').value;
+            // 自动切换到建议音阶
+            var song = MusicSongs.songs[songId];
+            if (song && song.scaleHint && song.scaleHint.kongling && song.scaleHint.kongling !== currentScale) {
+                currentScale = song.scaleHint.kongling;
+                _container.querySelector('.kongling-scale-select').value = currentScale;
+                buildTongues(); buildSongSelect();
+            }
+            loadSong(songId);
+        }
+    });
     _container.querySelector('.kongling-restart-btn').addEventListener('click', () => { if (currentSong) loadSong(currentSong.id); });
     _container.querySelector('.kongling-reset-btn').addEventListener('click', resetSong);
 
@@ -362,6 +424,7 @@ function init(container) {
     requestAnimationFrame(() => buildTongues());
 
     return {
+        muteAll,
         attachKeyboard() { document.addEventListener('keydown', _keyDownHandler); document.addEventListener('keyup', _keyUpHandler); },
         detachKeyboard() { document.removeEventListener('keydown', _keyDownHandler); document.removeEventListener('keyup', _keyUpHandler); },
         destroy() {

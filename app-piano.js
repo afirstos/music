@@ -185,6 +185,28 @@ const PianoApp = (function () {
         .piano-install-hint { display: none; }
     }
 
+    .piano-finish-overlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,.7);
+        display: none; align-items: center; justify-content: center;
+        z-index: 300;
+    }
+    .piano-finish-overlay.show { display: flex; }
+    .piano-finish-box {
+        background: #fff; border: 2px solid #4a7ab5;
+        border-radius: 16px; padding: 32px 40px;
+        text-align: center; box-shadow: 0 0 40px rgba(0,0,0,.3);
+    }
+    .piano-finish-box .piano-finish-emoji { font-size: 48px; margin-bottom: 12px; }
+    .piano-finish-box h2 { font-size: 22px; margin-bottom: 8px; color: #4a7ab5; }
+    .piano-finish-box p { color: #666; margin-bottom: 20px; }
+    .piano-finish-box button {
+        background: #4a7ab5; color: #fff; border: none;
+        border-radius: 8px; padding: 10px 28px;
+        font-size: 15px; font-weight: 600; cursor: pointer;
+        touch-action: manipulation;
+    }
+
     @media (max-width: 360px) {
         .piano-white-key .piano-label { font-size: 10px; }
         .piano-white-key .piano-note-name { font-size: 8px; }
@@ -199,14 +221,7 @@ const PianoApp = (function () {
     <div class="piano-score-controls">
         <button class="piano-score-btn" id="scoreToggle">📖 曲谱</button>
         <select class="piano-score-select" id="songSelect">
-            <option value="twinkle">小星星</option>
-            <option value="ode">欢乐颂</option>
-            <option value="birthday">生日快乐</option>
-            <option value="canon">卡农 (简单版)</option>
-            <option value="mary">玛丽的小羊羔</option>
-            <option value="sennen">千年盛开 (Sahaja)</option>
-            <option value="ganesha">Ganesha Vandana</option>
-            <option value="omnamah">Om Namah Shivaya</option>
+            <!-- 动态生成 by buildSongSelect() -->
         </select>
         <button class="piano-score-btn" id="scoreReset" style="display:none">↺</button>
         <div class="piano-octave-control">
@@ -225,7 +240,15 @@ const PianoApp = (function () {
     </div>
 </div>
 <div class="piano-status-bar"><div class="piano-status-text" id="statusText">点击琴键开始演奏</div></div>
-<div class="piano-hint">触摸/鼠标演奏 · 键盘 A~' 白键 W E T Y U I O 黑键 · Z/X 切换八度</div>`;
+<div class="piano-hint">触摸/鼠标演奏 · 键盘 A~' 白键 W E T Y U I O 黑键 · Z/X 切换八度</div>
+<div class="piano-finish-overlay piano-finish-overlay-el">
+    <div class="piano-finish-box">
+        <div class="piano-finish-emoji">🎉</div>
+        <h2>演奏完成！</h2>
+        <p class="piano-finish-text-el">太棒了！</p>
+        <button class="piano-reset-btn">再来一次</button>
+    </div>
+</div>`;
 
     // ════════════════════════════════════════════════════════════════
     // 音符系统
@@ -334,79 +357,18 @@ const PianoApp = (function () {
         o3.start(now); o3.stop(now + 0.6); oscs.push(o3);
 
         activeOscillators.push(oscs);
-        setTimeout(() => {
+        _setTimeout(function () {
             const idx = activeOscillators.indexOf(oscs);
             if (idx !== -1) activeOscillators.splice(idx, 1);
+            lpf.disconnect();
+            masterGain.disconnect();
         }, 2100);
     }
 
     // ════════════════════════════════════════════════════════════════
     // 曲谱系统
     // ════════════════════════════════════════════════════════════════
-    const SONGS = {
-        twinkle: {
-            name: '小星星',
-            notes: ['C4', 'C4', 'G4', 'G4', 'A4', 'A4', 'G4', '_', 'F4', 'F4', 'E4', 'E4', 'D4', 'D4', 'C4', '_',
-                'G4', 'G4', 'F4', 'F4', 'E4', 'E4', 'D4', '_', 'G4', 'G4', 'F4', 'F4', 'E4', 'E4', 'D4', '_',
-                'C4', 'C4', 'G4', 'G4', 'A4', 'A4', 'G4', '_', 'F4', 'F4', 'E4', 'E4', 'D4', 'D4', 'C4']
-        },
-        ode: {
-            name: '欢乐颂',
-            notes: ['E4', 'E4', 'F4', 'G4', 'G4', 'F4', 'E4', 'D4', 'C4', 'C4', 'D4', 'E4', 'E4', '_', 'D4', 'D4',
-                'E4', 'E4', 'F4', 'G4', 'G4', 'F4', 'E4', 'D4', 'C4', 'C4', 'D4', 'E4', 'D4', '_', 'C4', 'C4']
-        },
-        birthday: {
-            name: '生日快乐',
-            notes: ['C4', 'C4', 'D4', 'C4', 'F4', 'E4', '_', 'C4', 'C4', 'D4', 'C4', 'G4', 'F4', '_',
-                'C4', 'C4', 'C5', 'A4', 'F4', 'E4', 'D4', '_', 'A#4', 'A#4', 'A4', 'F4', 'G4', 'F4']
-        },
-        canon: {
-            name: '卡农 (简单版)',
-            notes: ['E5', 'D5', 'C5', 'B4', 'A4', 'G4', 'A4', 'B4', 'C5', 'B4', 'A4', 'G4', 'F4', 'E4', 'F4', 'G4',
-                'A4', 'G4', 'F4', 'E4', 'D4', 'C4', 'D4', 'E4']
-        },
-        mary: {
-            name: '玛丽的小羊羔',
-            notes: ['E4', 'D4', 'C4', 'D4', 'E4', 'E4', 'E4', '_', 'D4', 'D4', 'D4', '_', 'E4', 'G4', 'G4', '_',
-                'E4', 'D4', 'C4', 'D4', 'E4', 'E4', 'E4', 'E4', 'D4', 'D4', 'E4', 'D4', 'C4']
-        },
-        sennen: {
-            name: '千年盛开 (Sahaja)',
-            notes: [
-                'A4', '_', 'A4', 'B4', 'C5', '_', 'B4', 'A4',
-                'G4', '_', 'G4', 'A4', 'B4', '_', 'A4', 'G4',
-                'F4', '_', 'F4', 'G4', 'A4', 'C5', '_', 'A4',
-                'E4', '_', 'E4', 'F4', 'G4', '_', 'F4', 'E4',
-                'A4', 'C5', 'E5', '_', 'D5', 'C5', 'B4', '_', 'A4',
-                'G4', 'B4', 'D5', '_', 'C5', 'B4', 'A4', '_', 'G4',
-                'F4', 'A4', 'C5', '_', 'B4', 'A4', 'G4', 'F4', '_', 'E4',
-                'A4', '_', 'G4', '_', 'A4'
-            ]
-        },
-        ganesha: {
-            name: 'Ganesha Vandana (Sahaja)',
-            notes: [
-                'G4', 'A4', 'B4', 'C5', '_', 'B4', 'A4', 'G4', '_',
-                'E4', 'G4', 'A4', 'G4', '_', 'E4', 'D4', 'E4', '_',
-                'G4', 'G4', 'A4', 'B4', 'C5', 'B4', '_', 'A4', 'G4',
-                'E4', 'F4', 'G4', 'A4', '_', 'G4', 'E4', '_',
-                'C5', 'B4', 'A4', 'G4', '_', 'A4', 'B4', 'C5', '_',
-                'G4', 'A4', 'B4', '_', 'A4', 'G4', 'E4', '_',
-                'D4', 'E4', 'G4', 'A4', 'G4', '_', 'E4', 'D4', '_', 'C4'
-            ]
-        },
-        omnamah: {
-            name: 'Om Namah Shivaya (Sahaja)',
-            notes: [
-                'E4', '_', 'E4', 'D4', 'E4', '_', 'G4', 'G4', 'E4', '_',
-                'A4', '_', 'A4', 'G4', 'A4', '_', 'C5', 'B4', 'A4', '_',
-                'G4', 'E4', 'G4', 'A4', '_', 'G4', 'E4', 'D4', '_', 'E4', '_',
-                'A4', 'G4', 'E4', '_', 'D4', 'E4', 'G4', '_', 'E4', '_',
-                'G4', 'A4', 'C5', '_', 'B4', 'A4', 'G4', 'E4', '_',
-                'D4', 'E4', 'G4', 'A4', '_', 'G4', '_', 'E4'
-            ]
-        }
-    };
+    const SONGS = MusicSongs.songs;
 
     let scoreMode = false;
     let currentSong = 'twinkle';
@@ -510,12 +472,21 @@ const PianoApp = (function () {
         pianoContainerEl.addEventListener('touchend', handleTouchEnd, { passive: false });
         pianoContainerEl.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
-        // 6. 按钮事件
+        // 6. 动态生成曲谱下拉
+        buildSongSelect();
+
+        // 7. 按钮事件
         container.querySelector('#octDown').addEventListener('click', function () { shiftOctave(-1); });
         container.querySelector('#octUp').addEventListener('click', function () { shiftOctave(1); });
         container.querySelector('#scoreToggle').addEventListener('click', toggleScoreMode);
         container.querySelector('#songSelect').addEventListener('change', function (e) { loadSong(e.target.value); });
         container.querySelector('#scoreReset').addEventListener('click', function () { loadSong(currentSong); });
+        container.querySelector('.piano-reset-btn').addEventListener('click', function () {
+            container.querySelector('.piano-finish-overlay-el').classList.remove('show');
+            scoreIndex = 0; combo = 0;
+            updateScoreUI();
+            highlightNextNote();
+        });
 
         // 7. install hint
         if (!window.matchMedia('(display-mode: fullscreen)').matches &&
@@ -565,6 +536,8 @@ const PianoApp = (function () {
             if (mouseActiveKey) deactivateKey(mouseActiveKey);
             mouseActiveKey = null;
         };
+
+        return { muteAll: muteAll, destroy: destroy };
     }
 
     function destroy(container) {
@@ -601,6 +574,20 @@ const PianoApp = (function () {
     // ════════════════════════════════════════════════════════════════
     // 曲谱系统函数
     // ════════════════════════════════════════════════════════════════
+    function buildSongSelect() {
+        var sel = $id('songSelect'); sel.innerHTML = '';
+        MusicSongs.groups.forEach(function (g) {
+            var optgroup = document.createElement('optgroup');
+            optgroup.label = g.label;
+            g.keys.forEach(function (k) {
+                var opt = document.createElement('option');
+                opt.value = k; opt.textContent = MusicSongs.songs[k].name;
+                optgroup.appendChild(opt);
+            });
+            sel.appendChild(optgroup);
+        });
+    }
+
     function toggleScoreMode() {
         scoreMode = !scoreMode;
         $id('scoreToggle').classList.toggle('active', scoreMode);
@@ -678,8 +665,9 @@ const PianoApp = (function () {
         if (scoreIndex >= scoreRealNotes.length) {
             $id('statusText').textContent = '\uD83C\uDF89 太棒了！全部弹完！最高连击 ' + combo;
             clearScoreHighlights(true);
-            scoreIndex = 0; combo = 0;
-            _setTimeout(function () { updateScoreUI(); highlightNextNote(); }, 800);
+            var finishText = combo >= 10 ? '太棒了！完美演奏！🌟' : '演奏完成，继续加油！';
+            _container.querySelector('.piano-finish-text-el').textContent = finishText;
+            _container.querySelector('.piano-finish-overlay-el').classList.add('show');
             return;
         }
         var targetNote = scoreRealNotes[scoreIndex];
@@ -867,7 +855,14 @@ const PianoApp = (function () {
         buildPiano();
     }
 
-    return { init: init, destroy: destroy };
+    function muteAll() {
+        activeOscillators.forEach(function (oscs) {
+            try { oscs.forEach(function (o) { o.stop(); }); } catch (e) { }
+        });
+        activeOscillators = [];
+    }
+
+    return { init: init, destroy: destroy, muteAll: muteAll };
 })();
 
 if (typeof window !== 'undefined') {

@@ -175,7 +175,7 @@ body {
 <nav class="shell-nav">
     <div class="shell-tabs" id="shellTabs">
         <button class="shell-tab active" data-index="0">🎹 钢琴</button>
-        <button class="shell-tab" data-index="1">🥁 颂钵</button>
+        <button class="shell-tab" data-index="1">🔔 颂钵</button>
         <button class="shell-tab" data-index="2">🎵 空灵鼓</button>
         <div class="shell-indicator" id="shellIndicator"></div>
     </div>
@@ -225,6 +225,12 @@ function switchPage(index, direction) {
 
     // detach keyboard from current app
     detachCurrentKeyboard();
+
+    // 止音：停止当前页面的所有发声
+    var currentApp = APP_MODULES[APP_NAMES[currentPage]];
+    if (currentApp && typeof currentApp.muteAll === 'function') {
+        currentApp.muteAll();
+    }
 
     // direction: 1 = left→right, -1 = right→left
     if (!direction) direction = index > currentPage ? 1 : -1;
@@ -374,6 +380,15 @@ async function initApps() {
     await new Promise((resolve, reject) => {
         const script = document.createElement('script');
         script.src = 'audio-engine.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+
+    // 加载共享曲谱库
+    await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'songs.js';
         script.onload = resolve;
         script.onerror = reject;
         document.head.appendChild(script);

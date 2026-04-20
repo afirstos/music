@@ -4,10 +4,10 @@
 const SongboApp = (function() {
 
 const CSS = `
-.songbo-app{display:flex;flex-direction:column;height:100%;overflow:hidden;--bowl-outer:#8b5e3c;--bowl-mid:#b8860b;--bowl-inner:#cd9934;--bowl-highlight:#daa520;--bowl-rim:#e8c56d;--bowl-shadow:rgba(139,94,60,.6);--bg-primary:#1a1212;--bg-secondary:#2a1f1f;--text-primary:#e8d5b7;--text-secondary:#a08060;--accent:#daa520;--particle-color:rgba(218,165,32,.3)}
+.songbo-app{position:relative;display:flex;flex-direction:column;height:100%;overflow:hidden;--bowl-outer:#8b5e3c;--bowl-mid:#b8860b;--bowl-inner:#cd9934;--bowl-highlight:#daa520;--bowl-rim:#e8c56d;--bowl-shadow:rgba(139,94,60,.6);--bg-primary:#1a1212;--bg-secondary:#2a1f1f;--text-primary:#e8d5b7;--text-secondary:#a08060;--accent:#daa520;--particle-color:rgba(218,165,32,.3)}
 .songbo-app[data-theme="gold"]{--bowl-outer:#b8960b;--bowl-mid:#d4af37;--bowl-inner:#f0d060;--bowl-highlight:#ffe680;--bowl-rim:#fff4b0;--bowl-shadow:rgba(212,175,55,.6);--accent:#f0d060;--particle-color:rgba(240,208,96,.3)}
 .songbo-app[data-theme="dark"]{--bowl-outer:#2a2a3a;--bowl-mid:#3a3a5a;--bowl-inner:#4a4a6a;--bowl-highlight:#6a6a9a;--bowl-rim:#8080c0;--bowl-shadow:rgba(80,80,160,.6);--bg-primary:#0a0a14;--bg-secondary:#14142a;--text-primary:#b0b0e0;--text-secondary:#6060a0;--accent:#8080c0;--particle-color:rgba(100,100,200,.3)}
-.songbo-particles{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+.songbo-particles{position:absolute;inset:0;pointer-events:none;z-index:0;overflow:hidden}
 .songbo-particle{position:absolute;border-radius:50%;background:var(--particle-color);filter:blur(2px);animation:songbo-float-particle linear infinite}
 @keyframes songbo-float-particle{0%{transform:translateY(100vh) translateX(0) scale(.5);opacity:0}10%{opacity:1}90%{opacity:1}100%{transform:translateY(-10vh) translateX(var(--drift)) scale(1.2);opacity:0}}
 .songbo-controls{position:relative;z-index:10;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px 6px;flex-wrap:wrap}
@@ -26,10 +26,10 @@ const CSS = `
 @keyframes songbo-shake-note{0%,100%{transform:translateX(0)}25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 .songbo-score-progress{width:min(400px,80vw);height:4px;background:var(--bg-secondary);border-radius:2px;margin:4px 0 6px;overflow:hidden}
 .songbo-score-progress-fill{height:100%;background:var(--accent);transition:width .3s;border-radius:2px}
-.songbo-combo-display{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);font-size:36px;font-weight:bold;color:var(--accent);pointer-events:none;z-index:100;opacity:0;text-shadow:0 0 20px var(--accent);transition:opacity .3s}
+.songbo-combo-display{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:36px;font-weight:bold;color:var(--accent);pointer-events:none;z-index:100;opacity:0;text-shadow:0 0 20px var(--accent);transition:opacity .3s}
 .songbo-combo-display.show{opacity:1;animation:songbo-combo-pop .6s ease}
 @keyframes songbo-combo-pop{0%{transform:translate(-50%,-50%) scale(.5)}50%{transform:translate(-50%,-50%) scale(1.3)}100%{transform:translate(-50%,-50%) scale(1)}}
-.songbo-completion-overlay{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7);opacity:0;pointer-events:none;transition:opacity .4s}
+.songbo-completion-overlay{position:absolute;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7);opacity:0;pointer-events:none;transition:opacity .4s}
 .songbo-completion-overlay.show{opacity:1;pointer-events:auto}
 .songbo-completion-box{background:var(--bg-secondary);border:2px solid var(--accent);border-radius:20px;padding:30px 40px;text-align:center;transform:scale(.8);transition:transform .4s}
 .songbo-completion-overlay.show .songbo-completion-box{transform:scale(1)}
@@ -39,7 +39,7 @@ const CSS = `
 .songbo-completion-box button{background:var(--accent);color:var(--bg-primary);border:none;border-radius:10px;padding:8px 24px;font-size:15px;cursor:pointer}
 .songbo-bowl-stage{position:relative;z-index:5;flex:1;display:flex;align-items:center;justify-content:center}
 .songbo-bowl-container{position:relative;width:340px;height:340px}
-.songbo-bowl{position:absolute;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;background:radial-gradient(ellipse at 35% 30%,var(--bowl-rim) 0%,var(--bowl-highlight) 15%,var(--bowl-inner) 35%,var(--bowl-mid) 60%,var(--bowl-outer) 85%,rgba(0,0,0,.4) 100%);box-shadow:inset 0 -4px 12px rgba(0,0,0,.5),inset 0 2px 6px rgba(255,255,255,.15),0 4px 16px var(--bowl-shadow),0 0 0 2px rgba(0,0,0,.3);transition:transform .15s ease,box-shadow .3s;-webkit-tap-highlight-color:transparent}
+.songbo-bowl{position:absolute;border-radius:50%;cursor:pointer;touch-action:none;display:flex;align-items:center;justify-content:center;flex-direction:column;background:radial-gradient(ellipse at 35% 30%,var(--bowl-rim) 0%,var(--bowl-highlight) 15%,var(--bowl-inner) 35%,var(--bowl-mid) 60%,var(--bowl-outer) 85%,rgba(0,0,0,.4) 100%);box-shadow:inset 0 -4px 12px rgba(0,0,0,.5),inset 0 2px 6px rgba(255,255,255,.15),0 4px 16px var(--bowl-shadow),0 0 0 2px rgba(0,0,0,.3);transition:transform .15s ease,box-shadow .3s;-webkit-tap-highlight-color:transparent}
 .songbo-bowl::before{content:'';position:absolute;inset:15%;border-radius:50%;background:radial-gradient(ellipse at 40% 35%,transparent 30%,rgba(0,0,0,.08) 50%,transparent 52%,rgba(0,0,0,.05) 70%,transparent 72%,rgba(0,0,0,.04) 88%,transparent 90%);pointer-events:none}
 .songbo-bowl .songbo-label{font-size:13px;font-weight:700;color:rgba(26,18,18,.8);text-shadow:0 1px 1px rgba(255,255,255,.2);z-index:2;line-height:1.1;text-align:center}
 .songbo-bowl .songbo-label small{font-size:10px;font-weight:400;opacity:.7;display:block}
@@ -88,11 +88,7 @@ const HTML_TEMPLATE = `
 <div class="songbo-score-panel songbo-score-panel-el">
     <div class="songbo-score-bar">
         <select class="songbo-song-select">
-            <option value="chakra_med">脉轮冥想</option>
-            <option value="peaceful">宁静之心</option>
-            <option value="bell">晨钟暮鼓</option>
-            <option value="free1">自由组合 1</option>
-            <option value="free2">自由组合 2</option>
+            <!-- 动态生成 by buildSongSelect() -->
         </select>
         <button class="songbo-restart-btn">↺ 重来</button>
     </div>
@@ -121,18 +117,15 @@ const SCALES = {
     penta: [{note:'C3',freq:130.81},{note:'D3',freq:146.83},{note:'F3',freq:174.61},{note:'G3',freq:196.00},{note:'A3',freq:220.00},{note:'C4',freq:261.63},{note:'D4',freq:293.66}]
 };
 
-const SONGS = {
-    chakra_med: { name:'脉轮冥想', notes:[1,2,3,4,5,6,7,7,6,5,4,3,2,1,1,3,5,7,5,3,1] },
-    peaceful: { name:'宁静之心', notes:[1,3,5,3,1,3,5,3,1,5,3,1,5,3,1,3,5,1] },
-    bell: { name:'晨钟暮鼓', notes:[1,1,2,1,1,2,3,1,1,2,3,4,1,1,3,1,2,1,1,1] },
-    free1: { name:'自由组合 1', notes:[5,3,1,6,4,2,7,5,3,1,4,6,2,5,7,3,1] },
-    free2: { name:'自由组合 2', notes:[1,5,3,7,2,6,4,1,7,3,5,2,6,4,7,1] }
-};
+const SONGS = MusicSongs.songs;
+var resolvedNotes = []; // resolveNotes() 后的碗编号列表
 
 const KEY_MAP = {a:0,s:1,d:2,f:3,j:4,k:5,l:6};
 
 // ── State ──
 let _container = null;
+let _subGain = null;
+let _savedSubVolume = 1.0;
 let currentScale = 'chakra';
 let voices = [], rubVoices = new Map();
 const MAX_VOICES = 10;
@@ -141,6 +134,40 @@ let pointerDownTime = {}, pointerTimers = {}, keyDownState = {};
 let _keyDownHandler = null, _keyUpHandler = null;
 let _resizeHandler = null;
 let _timers = [];
+
+function getScaleNoteNames() {
+    return SCALES[currentScale].map(function (item) { return item.note; });
+}
+
+function resolveCurrentSong() {
+    var song = SONGS[currentSong];
+    if (!song) { resolvedNotes = []; return; }
+    resolvedNotes = MusicSongs.resolveNotes(song.notes, getScaleNoteNames());
+}
+
+function buildSongSelect() {
+    var sel = _container.querySelector('.songbo-song-select'); sel.innerHTML = '';
+    var scaleNames = getScaleNoteNames();
+    MusicSongs.groups.forEach(function (g) {
+        var optgroup = document.createElement('optgroup');
+        optgroup.label = g.label;
+        var hasAny = false;
+        g.keys.forEach(function (k) {
+            var song = MusicSongs.songs[k];
+            // fit 过滤：'piano' 专属的不显示
+            if (song.fit === 'piano') return;
+            var check = MusicSongs.checkPlayable(song.notes, scaleNames);
+            var label = song.name;
+            if (check.unplayable > 0) label += ' ⚠️(' + check.unplayable + '音不可弹)';
+            var opt = document.createElement('option');
+            opt.value = k; opt.textContent = label;
+            opt.title = check.unplayable > 0 ? check.unplayable + '个音在当前音阶下无法弹奏' : '所有音均可弹奏';
+            optgroup.appendChild(opt);
+            hasAny = true;
+        });
+        if (hasAny) sel.appendChild(optgroup);
+    });
+}
 
 function getBowlSize(i) { return 110 - (i * 40 / 6); }
 function getBowlPosition(i, containerSize) {
@@ -154,12 +181,12 @@ function getBowlPosition(i, containerSize) {
 function getReverbNodes() {
     // 使用 AudioEngine 的高质量金属腔体混响
     const { dry, wet, convolver } = AudioEngine.getReverb('metal');
-    return { dryGain: dry, wetGain: wet, convolver };
+    return { dryGain: dry, wetGain: wet, convolver, subGain: _subGain };
 }
 
 function playStrike(freq) {
     AudioEngine.getContext();
-    const { dryGain, convolver } = getReverbNodes();
+    const { dryGain, convolver, subGain } = getReverbNodes();
     const audioCtx = AudioEngine.getContext();
     const now = audioCtx.currentTime;
     if (voices.length >= MAX_VOICES) { const old = voices.shift(); old.forEach(n => { try{n.stop(now+0.05);}catch(e){} }); }
@@ -172,18 +199,18 @@ function playStrike(freq) {
     const lfo1 = audioCtx.createOscillator(); lfo1.frequency.value=5.5+Math.random()*1.5;
     const lfoGain1 = audioCtx.createGain(); lfoGain1.gain.value=2;
     lfo1.connect(lfoGain1); lfoGain1.connect(osc1.frequency); lfo1.start(now);
-    osc1.connect(gain1); gain1.connect(dryGain); gain1.connect(convolver); osc1.start(now); osc1.stop(now+10.5); lfo1.stop(now+10.5);
+    osc1.connect(gain1); gain1.connect(subGain); osc1.start(now); osc1.stop(now+10.5); lfo1.stop(now+10.5);
     nodes.push(osc1,lfo1);
 
     const osc2 = audioCtx.createOscillator(); osc2.type='sine'; osc2.frequency.value=freq*2;
     const gain2 = audioCtx.createGain(); gain2.gain.setValueAtTime(0,now); gain2.gain.linearRampToValueAtTime(0.2,now+0.003);
     gain2.gain.exponentialRampToValueAtTime(0.001,now+7);
-    osc2.connect(gain2); gain2.connect(dryGain); gain2.connect(convolver); osc2.start(now); osc2.stop(now+7.5); nodes.push(osc2);
+    osc2.connect(gain2); gain2.connect(subGain); osc2.start(now); osc2.stop(now+7.5); nodes.push(osc2);
 
     const osc3 = audioCtx.createOscillator(); osc3.type='sine'; osc3.frequency.value=freq*3;
     const gain3 = audioCtx.createGain(); gain3.gain.setValueAtTime(0,now); gain3.gain.linearRampToValueAtTime(0.08,now+0.003);
     gain3.gain.exponentialRampToValueAtTime(0.001,now+4);
-    osc3.connect(gain3); gain3.connect(dryGain); gain3.connect(convolver); osc3.start(now); osc3.stop(now+4.5); nodes.push(osc3);
+    osc3.connect(gain3); gain3.connect(subGain); osc3.start(now); osc3.stop(now+4.5); nodes.push(osc3);
 
     voices.push(nodes);
     const tid = setTimeout(() => { const idx = voices.indexOf(nodes); if (idx > -1) voices.splice(idx, 1); }, 11000);
@@ -192,7 +219,7 @@ function playStrike(freq) {
 
 function startRub(bowlIndex, freq) {
     AudioEngine.getContext();
-    const { dryGain, convolver } = getReverbNodes();
+    const { subGain } = getReverbNodes();
     const audioCtx = AudioEngine.getContext();
     if (rubVoices.has(bowlIndex)) return;
     const now = audioCtx.currentTime;
@@ -201,10 +228,10 @@ function startRub(bowlIndex, freq) {
     const lfo = audioCtx.createOscillator(); lfo.frequency.value=5+Math.random()*2;
     const lfoGain = audioCtx.createGain(); lfoGain.gain.value=4;
     lfo.connect(lfoGain); lfoGain.connect(osc1.frequency); lfo.start(now);
-    osc1.connect(gain1); gain1.connect(dryGain); gain1.connect(convolver); osc1.start(now);
+    osc1.connect(gain1); gain1.connect(subGain); osc1.start(now);
     const osc2 = audioCtx.createOscillator(); osc2.type='sine'; osc2.frequency.value=freq*2;
     const gain2 = audioCtx.createGain(); gain2.gain.setValueAtTime(0,now); gain2.gain.linearRampToValueAtTime(0.12,now+1.5);
-    osc2.connect(gain2); gain2.connect(dryGain); gain2.connect(convolver); osc2.start(now);
+    osc2.connect(gain2); gain2.connect(subGain); osc2.start(now);
     rubVoices.set(bowlIndex, {osc1,osc2,lfo,gain1,gain2});
 }
 
@@ -220,15 +247,16 @@ function stopRub(bowlIndex) {
 }
 
 function muteAll() {
+    if (!_subGain) return;
     const audioCtx = AudioEngine.getContext();
-    const masterGain = AudioEngine.getMasterGain();
     const now = audioCtx.currentTime;
-    masterGain.gain.cancelScheduledValues(now); masterGain.gain.setValueAtTime(masterGain.gain.value,now); masterGain.gain.linearRampToValueAtTime(0,now+0.5);
+    _savedSubVolume = _subGain.gain.value;
+    _subGain.gain.cancelScheduledValues(now); _subGain.gain.setValueAtTime(_savedSubVolume,now); _subGain.gain.linearRampToValueAtTime(0,now+0.5);
     for (const [idx] of rubVoices) { const bowl = _container.querySelectorAll('.songbo-bowl')[idx]; if(bowl) bowl.classList.remove('rubbing'); }
     rubVoices.clear();
     const tid = setTimeout(() => {
         voices.forEach(nodes => nodes.forEach(n => { try{n.stop();}catch(e){} })); voices = [];
-        if(masterGain){masterGain.gain.cancelScheduledValues(audioCtx.currentTime);masterGain.gain.setValueAtTime(0.7,audioCtx.currentTime);}
+        if(_subGain){_subGain.gain.cancelScheduledValues(audioCtx.currentTime);_subGain.gain.setValueAtTime(_savedSubVolume,audioCtx.currentTime);}
     }, 600);
     _timers.push(tid);
 }
@@ -243,8 +271,8 @@ function renderBowls() {
         const bowl = document.createElement('div'); bowl.className = 'songbo-bowl'; bowl.dataset.index = i;
         bowl.style.cssText = `width:${size}px;height:${size}px;left:${pos.x}px;top:${pos.y}px`;
         bowl.innerHTML = `<div class="songbo-label">${item.note}<small>${keys[i]}</small></div><div class="songbo-hint">🕉️</div><div class="songbo-rub-ring"></div>`;
-        bowl.addEventListener('pointerdown', e => { e.preventDefault(); onBowlDown(i, bowl); });
-        bowl.addEventListener('pointerup', e => { e.preventDefault(); onBowlUp(i, bowl); });
+        bowl.addEventListener('pointerdown', e => { onBowlDown(i, bowl); });
+        bowl.addEventListener('pointerup', e => { onBowlUp(i, bowl); });
         bowl.addEventListener('pointerleave', () => onBowlUp(i, bowl));
         bowl.addEventListener('pointercancel', () => onBowlUp(i, bowl));
         container.appendChild(bowl);
@@ -277,15 +305,16 @@ function triggerStrike(index, bowlEl) {
 
 // ── Score ──
 function checkScore(index, bowlEl) {
-    const song = SONGS[currentSong]; if (scoreIndex >= song.notes.length) return;
-    const expected = song.notes[scoreIndex] - 1;
+    if (scoreIndex >= resolvedNotes.length) return;
+    var expected = resolvedNotes[scoreIndex];
+    if (expected < 0) { scoreIndex++; updateScoreDisplay(); updateScoreHints(); updateProgress(); if (scoreIndex >= resolvedNotes.length) setTimeout(function(){showCompletion();},600); return; }
     if (index === expected) {
         combo++; scoreIndex++;
         const hint = bowlEl.querySelector('.songbo-hint'); hint.classList.remove('show','blink'); hint.classList.add('correct');
         setTimeout(() => hint.classList.remove('correct'), 500);
         if (combo >= 3) showCombo(combo);
         updateScoreDisplay(); updateScoreHints(); updateProgress();
-        if (scoreIndex >= song.notes.length) setTimeout(() => showCompletion(), 600);
+        if (scoreIndex >= resolvedNotes.length) setTimeout(function(){showCompletion();},600);
     } else {
         combo = 0; bowlEl.classList.remove('wrong-shake'); void bowlEl.offsetWidth; bowlEl.classList.add('wrong-shake');
         setTimeout(() => bowlEl.classList.remove('wrong-shake'), 400);
@@ -302,28 +331,36 @@ function showCombo(n) {
 
 function updateScoreDisplay() {
     const display = _container.querySelector('.songbo-score-display-el'); const song = SONGS[currentSong]; display.innerHTML = '';
-    song.notes.forEach((deg, i) => {
+    song.notes.forEach(function (n, i) {
         const div = document.createElement('div'); div.className = 'songbo-score-note';
         if (i < scoreIndex) div.classList.add('played');
         if (i === scoreIndex) div.classList.add('current');
-        div.textContent = deg; display.appendChild(div);
+        if (n === '_') {
+            div.textContent = '·';
+        } else if (resolvedNotes[i] === -2) {
+            div.textContent = '?'; div.style.opacity = '0.35'; div.title = '当前音阶无法弹奏此音';
+        } else {
+            div.textContent = n;
+        }
+        display.appendChild(div);
     });
 }
 
 function updateScoreHints() {
     _container.querySelectorAll('.songbo-bowl .songbo-hint').forEach(h => h.classList.remove('show','correct','blink'));
     if (!scoreMode) return;
-    const song = SONGS[currentSong]; if (scoreIndex >= song.notes.length) return;
-    const bowls = _container.querySelectorAll('.songbo-bowl');
-    if (bowls[song.notes[scoreIndex]-1]) bowls[song.notes[scoreIndex]-1].querySelector('.songbo-hint').classList.add('show');
+    if (scoreIndex >= resolvedNotes.length) return;
+    var bowls = _container.querySelectorAll('.songbo-bowl');
+    var idx = resolvedNotes[scoreIndex];
+    if (idx >= 0 && bowls[idx]) bowls[idx].querySelector('.songbo-hint').classList.add('show');
 }
 
 function updateProgress() {
-    const song = SONGS[currentSong];
-    _container.querySelector('.songbo-progress-fill-el').style.width = (scoreIndex / song.notes.length * 100) + '%';
+    if (!resolvedNotes.length) return;
+    _container.querySelector('.songbo-progress-fill-el').style.width = (scoreIndex / resolvedNotes.length * 100) + '%';
 }
 
-function resetScore() { scoreIndex = 0; combo = 0; updateScoreDisplay(); updateScoreHints(); updateProgress(); }
+function resetScore() { scoreIndex = 0; combo = 0; resolveCurrentSong(); updateScoreDisplay(); updateScoreHints(); updateProgress(); }
 function showCompletion() { _container.querySelector('.songbo-completion-overlay-el').classList.add('show'); }
 function closeCompletion() { _container.querySelector('.songbo-completion-overlay-el').classList.remove('show'); resetScore(); }
 
@@ -340,6 +377,14 @@ function createParticles() {
 // ── init ──
 function init(container) {
     _container = container;
+
+    // 创建颂钵专属子 GainNode，连接到混响链路
+    _subGain = AudioEngine.createSubGain();
+    const { dry, convolver } = AudioEngine.getReverb('metal');
+    // 断开 subGain 到 masterGain 的直连（createSubGain 自动连了），改接混响链路
+    _subGain.disconnect();
+    _subGain.connect(dry);
+    _subGain.connect(convolver);
 
     const styleEl = document.createElement('style'); styleEl.textContent = CSS; container.appendChild(styleEl);
     const wrapper = document.createElement('div'); wrapper.className = 'songbo-app';
@@ -372,7 +417,8 @@ function init(container) {
     _resizeHandler = () => { clearTimeout(_resizeHandler._t); _resizeHandler._t = setTimeout(renderBowls, 200); };
 
     // Control events
-    container.querySelector('.songbo-scale-select').addEventListener('change', e => { currentScale = e.target.value; muteAll(); renderBowls(); if (scoreMode) resetScore(); });
+    buildSongSelect();
+    container.querySelector('.songbo-scale-select').addEventListener('change', e => { currentScale = e.target.value; muteAll(); renderBowls(); buildSongSelect(); if (scoreMode) resetScore(); });
     container.querySelector('.songbo-theme-select').addEventListener('change', e => {
         const val = e.target.value;
         const appEl = container.querySelector('.songbo-app');
@@ -385,7 +431,17 @@ function init(container) {
         if (scoreMode) { resetScore(); updateScoreDisplay(); } else updateScoreHints();
     });
     container.querySelector('.songbo-mute-btn').addEventListener('click', muteAll);
-    container.querySelector('.songbo-song-select').addEventListener('change', e => { currentSong = e.target.value; resetScore(); updateScoreDisplay(); });
+    container.querySelector('.songbo-song-select').addEventListener('change', e => {
+        currentSong = e.target.value;
+        // 自动切换到建议音阶
+        var song = MusicSongs.songs[currentSong];
+        if (song && song.scaleHint && song.scaleHint.songbo && song.scaleHint.songbo !== currentScale) {
+            currentScale = song.scaleHint.songbo;
+            container.querySelector('.songbo-scale-select').value = currentScale;
+            muteAll(); renderBowls(); buildSongSelect();
+        }
+        resetScore(); updateScoreDisplay();
+    });
     container.querySelector('.songbo-restart-btn').addEventListener('click', resetScore);
     container.querySelector('.songbo-continue-btn').addEventListener('click', closeCompletion);
 
@@ -395,6 +451,7 @@ function init(container) {
     requestAnimationFrame(() => renderBowls());
 
     return {
+        muteAll,
         attachKeyboard() { document.addEventListener('keydown', _keyDownHandler); document.addEventListener('keyup', _keyUpHandler); window.addEventListener('resize', _resizeHandler); },
         detachKeyboard() { document.removeEventListener('keydown', _keyDownHandler); document.removeEventListener('keyup', _keyUpHandler); window.removeEventListener('resize', _resizeHandler); },
         destroy() {

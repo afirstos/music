@@ -1,8 +1,9 @@
-const CACHE_NAME = 'music-hub-v5';
+const CACHE_NAME = 'music-hub-v9';
 
 const ASSETS = [
     './',
     './index.html',
+    './songs.js',
     './audio-engine.js',
     './app-piano.js',
     './app-songbo.js',
@@ -28,8 +29,20 @@ self.addEventListener('activate', e => {
     self.clients.claim();
 });
 
-self.addEventListener('fetch', e => {
+self.addEventListener('fetch', function(e) {
     e.respondWith(
-        caches.match(e.request).then(r => r || fetch(e.request))
+        caches.open(CACHE_NAME).then(function(cache) {
+            return cache.match(e.request).then(function(cached) {
+                var fetchPromise = fetch(e.request).then(function(networkResponse) {
+                    if (networkResponse && networkResponse.status === 200) {
+                        cache.put(e.request, networkResponse.clone());
+                    }
+                    return networkResponse;
+                }).catch(function() {
+                    return cached;
+                });
+                return cached || fetchPromise;
+            });
+        })
     );
 });

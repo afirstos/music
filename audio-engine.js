@@ -4,10 +4,8 @@
 const AudioEngine = (function() {
     let _ctx = null;
     let _masterGain = null;
-    let _convolver = null;
-    let _dryGain = null;
-    let _wetGain = null;
-    let _reverbReady = false;
+    let _reverbMap = {};
+    let _savedMasterVolume = 0.7;
 
     function getContext() {
         if (!_ctx) {
@@ -24,7 +22,7 @@ const AudioEngine = (function() {
 
     function getDestination() {
         getContext();
-        return _dryGain || _masterGain; // 如果混响未初始化，直接输出到 masterGain
+        return _masterGain;
     }
 
     function getMasterGain() {
@@ -118,8 +116,15 @@ const AudioEngine = (function() {
      * @returns {{ dry: GainNode, wet: GainNode, convolver: ConvolverNode }}
      */
     function initReverb(type = 'metal', dryWet = 0.4) {
-        if (_reverbReady) {
-            return { dry: _dryGain, wet: _wetGain, convolver: _convolver };
+        return getReverb(type, dryWet);
+    }
+
+    /**
+     * 获取混响节点（如果该类型未初始化会自动创建并缓存）
+     */
+    function getReverb(type = 'metal', dryWet = 0.4) {
+        if (_reverbMap[type]) {
+            return _reverbMap[type];
         }
 
         getContext();
@@ -128,44 +133,36 @@ const AudioEngine = (function() {
         const impulse = createImpulseResponse(_ctx, 3.5, type);
 
         // 创建混响节点
-        _convolver = _ctx.createConvolver();
-        _convolver.buffer = impulse;
+        const convolver = _ctx.createConvolver();
+        convolver.buffer = impulse;
 
-        _dryGain = _ctx.createGain();
-        _dryGain.gain.value = 1 - dryWet;
-        _dryGain.connect(_masterGain);
+        const dry = _ctx.createGain();
+        dry.gain.value = 1 - dryWet;
+        dry.connect(_masterGain);
 
-        _wetGain = _ctx.createGain();
-        _wetGain.gain.value = dryWet;
-        _wetGain.connect(_masterGain);
+        const wet = _ctx.createGain();
+        wet.gain.value = dryWet;
+        wet.connect(_masterGain);
 
-        _convolver.connect(_wetGain);
+        convolver.connect(wet);
 
-        _reverbReady = true;
+        _reverbMap[type] = { dry, wet, convolver };
 
-        return { dry: _dryGain, wet: _wetGain, convolver: _convolver };
-    }
-
-    /**
-     * 获取混响节点（如果未初始化会自动初始化）
-     */
-    function getReverb(type = 'metal') {
-        if (!_reverbReady) {
-            initReverb(type);
-        }
-        return { dry: _dryGain, wet: _wetGain, convolver: _convolver };
+        return _reverbMap[type];
     }
 
     /**
      * 设置混响干湿比
+     * @param {string} type - 混响类型
      * @param {number} value - 0-1，0=全干，1=全湿
      */
-    function setReverbMix(value) {
-        if (!_reverbReady) return;
+    function setReverbMix(value, type) {
+        const entry = type ? _reverbMap[type] : Object.values(_reverbMap)[0];
+        if (!entry) return;
         const v = Math.max(0, Math.min(1, value));
         const now = _ctx.currentTime;
-        _dryGain.gain.setValueAtTime(1 - v, now);
-        _wetGain.gain.setValueAtTime(v, now);
+        entry.dry.gain.setValueAtTime(1 - v, now);
+        entry.wet.gain.setValueAtTime(v, now);
     }
 
     /**
@@ -174,17 +171,30 @@ const AudioEngine = (function() {
     function muteAll(duration = 0.3) {
         if (!_masterGain) return;
         const now = _ctx.currentTime;
+        _savedMasterVolume = _masterGain.gain.value;
         _masterGain.gain.cancelScheduledValues(now);
-        _masterGain.gain.setValueAtTime(_masterGain.gain.value, now);
+        _masterGain.gain.setValueAtTime(_savedMasterVolume, now);
         _masterGain.gain.linearRampToValueAtTime(0, now + duration);
         
         // 恢复音量
         setTimeout(() => {
             if (_masterGain) {
                 _masterGain.gain.cancelScheduledValues(_ctx.currentTime);
-                _masterGain.gain.setValueAtTime(0.7, _ctx.currentTime);
+                _masterGain.gain.setValueAtTime(_savedMasterVolume, _ctx.currentTime);
             }
         }, duration * 1000 + 50);
+    }
+
+    /**
+     * 创建一个连接到 masterGain 的子 GainNode，供每个 app 独立控制音量
+     * @returns {GainNode}
+     */
+    function createSubGain() {
+        getContext();
+        const sub = _ctx.createGain();
+        sub.gain.value = 1.0;
+        sub.connect(_masterGain);
+        return sub;
     }
 
     return {
@@ -197,7 +207,8 @@ const AudioEngine = (function() {
         getReverb,
         setReverbMix,
         muteAll,
-        createImpulseResponse
+        createImpulseResponse,
+        createSubGain
     };
 })();
 
