@@ -1,4 +1,6 @@
 // app-songbo.js — Songbo (Singing Bowl) module for Music Hub
+// Uses shared AudioEngine for audio context
+
 const SongboApp = (function() {
 
 const CSS = `
@@ -132,13 +134,13 @@ const KEY_MAP = {a:0,s:1,d:2,f:3,j:4,k:5,l:6};
 // ── State ──
 let _container = null;
 let currentScale = 'chakra';
-let audioCtx = null, masterGain = null, convolver = null, dryGain = null, wetGain = null;
 let voices = [], rubVoices = new Map();
 const MAX_VOICES = 10;
 let scoreMode = false, currentSong = 'chakra_med', scoreIndex = 0, combo = 0, comboTimer = null;
 let pointerDownTime = {}, pointerTimers = {}, keyDownState = {};
 let _keyDownHandler = null, _keyUpHandler = null;
 let _resizeHandler = null;
+let _timers = [];
 
 function getBowlSize(i) { return 110 - (i * 40 / 6); }
 function getBowlPosition(i, containerSize) {
@@ -149,23 +151,16 @@ function getBowlPosition(i, containerSize) {
     return { x: cx + radius * Math.cos(angle) - size/2, y: cy + radius * Math.sin(angle) - size/2 };
 }
 
-function initAudio() {
-    if (audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    masterGain = audioCtx.createGain(); masterGain.gain.value = 0.7; masterGain.connect(audioCtx.destination);
-    const irLen = audioCtx.sampleRate * 3;
-    const irBuffer = audioCtx.createBuffer(2, irLen, audioCtx.sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-        const data = irBuffer.getChannelData(ch);
-        for (let i = 0; i < irLen; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / irLen, 2.5);
-    }
-    convolver = audioCtx.createConvolver(); convolver.buffer = irBuffer;
-    dryGain = audioCtx.createGain(); dryGain.gain.value = 0.5; dryGain.connect(masterGain);
-    wetGain = audioCtx.createGain(); wetGain.gain.value = 0.5; convolver.connect(wetGain); wetGain.connect(masterGain);
+function getReverbNodes() {
+    // 使用 AudioEngine 的高质量金属腔体混响
+    const { dry, wet, convolver } = AudioEngine.getReverb('metal');
+    return { dryGain: dry, wetGain: wet, convolver };
 }
 
 function playStrike(freq) {
-    initAudio(); if (audioCtx.state === 'suspended') audioCtx.resume();
+    AudioEngine.getContext();
+    const { dryGain, convolver } = getReverbNodes();
+    const audioCtx = AudioEngine.getContext();
     const now = audioCtx.currentTime;
     if (voices.length >= MAX_VOICES) { const old = voices.shift(); old.forEach(n => { try{n.stop(now+0.05);}catch(e){} }); }
     const nodes = [];
@@ -191,11 +186,14 @@ function playStrike(freq) {
     osc3.connect(gain3); gain3.connect(dryGain); gain3.connect(convolver); osc3.start(now); osc3.stop(now+4.5); nodes.push(osc3);
 
     voices.push(nodes);
-    setTimeout(() => { const idx = voices.indexOf(nodes); if (idx > -1) voices.splice(idx, 1); }, 11000);
+    const tid = setTimeout(() => { const idx = voices.indexOf(nodes); if (idx > -1) voices.splice(idx, 1); }, 11000);
+    _timers.push(tid);
 }
 
 function startRub(bowlIndex, freq) {
-    initAudio(); if (audioCtx.state === 'suspended') audioCtx.resume();
+    AudioEngine.getContext();
+    const { dryGain, convolver } = getReverbNodes();
+    const audioCtx = AudioEngine.getContext();
     if (rubVoices.has(bowlIndex)) return;
     const now = audioCtx.currentTime;
     const osc1 = audioCtx.createOscillator(); osc1.type='sine'; osc1.frequency.value=freq;
@@ -212,20 +210,27 @@ function startRub(bowlIndex, freq) {
 
 function stopRub(bowlIndex) {
     const v = rubVoices.get(bowlIndex); if (!v) return;
+    const audioCtx = AudioEngine.getContext();
     const now = audioCtx.currentTime;
     v.gain1.gain.cancelScheduledValues(now); v.gain1.gain.setValueAtTime(v.gain1.gain.value,now); v.gain1.gain.linearRampToValueAtTime(0,now+2);
     v.gain2.gain.cancelScheduledValues(now); v.gain2.gain.setValueAtTime(v.gain2.gain.value,now); v.gain2.gain.linearRampToValueAtTime(0,now+2);
-    setTimeout(() => { try{v.osc1.stop();}catch(e){} try{v.osc2.stop();}catch(e){} try{v.lfo.stop();}catch(e){} }, 2200);
+    const tid = setTimeout(() => { try{v.osc1.stop();}catch(e){} try{v.osc2.stop();}catch(e){} try{v.lfo.stop();}catch(e){} }, 2200);
+    _timers.push(tid);
     rubVoices.delete(bowlIndex);
 }
 
 function muteAll() {
-    if (!audioCtx) return;
+    const audioCtx = AudioEngine.getContext();
+    const masterGain = AudioEngine.getMasterGain();
     const now = audioCtx.currentTime;
     masterGain.gain.cancelScheduledValues(now); masterGain.gain.setValueAtTime(masterGain.gain.value,now); masterGain.gain.linearRampToValueAtTime(0,now+0.5);
     for (const [idx] of rubVoices) { const bowl = _container.querySelectorAll('.songbo-bowl')[idx]; if(bowl) bowl.classList.remove('rubbing'); }
     rubVoices.clear();
-    setTimeout(() => { voices.forEach(nodes => nodes.forEach(n => { try{n.stop();}catch(e){} })); voices = []; if(masterGain){masterGain.gain.cancelScheduledValues(audioCtx.currentTime);masterGain.gain.setValueAtTime(0.7,audioCtx.currentTime);} }, 600);
+    const tid = setTimeout(() => {
+        voices.forEach(nodes => nodes.forEach(n => { try{n.stop();}catch(e){} })); voices = [];
+        if(masterGain){masterGain.gain.cancelScheduledValues(audioCtx.currentTime);masterGain.gain.setValueAtTime(0.7,audioCtx.currentTime);}
+    }, 600);
+    _timers.push(tid);
 }
 
 function renderBowls() {
@@ -248,7 +253,8 @@ function renderBowls() {
 }
 
 function onBowlDown(index, bowlEl) {
-    initAudio(); pointerDownTime[index] = Date.now();
+    AudioEngine.getContext();
+    pointerDownTime[index] = Date.now();
     pointerTimers[index] = setTimeout(() => { startRub(index, SCALES[currentScale][index].freq); bowlEl.classList.add('rubbing'); }, 300);
 }
 
@@ -383,7 +389,7 @@ function init(container) {
     container.querySelector('.songbo-restart-btn').addEventListener('click', resetScore);
     container.querySelector('.songbo-continue-btn').addEventListener('click', closeCompletion);
 
-    container.addEventListener('touchstart', () => initAudio(), { once: true });
+    container.addEventListener('touchstart', () => AudioEngine.getContext(), { once: true });
 
     createParticles();
     requestAnimationFrame(() => renderBowls());
@@ -391,7 +397,21 @@ function init(container) {
     return {
         attachKeyboard() { document.addEventListener('keydown', _keyDownHandler); document.addEventListener('keyup', _keyUpHandler); window.addEventListener('resize', _resizeHandler); },
         detachKeyboard() { document.removeEventListener('keydown', _keyDownHandler); document.removeEventListener('keyup', _keyUpHandler); window.removeEventListener('resize', _resizeHandler); },
-        destroy() { this.detachKeyboard(); }
+        destroy() {
+            this.detachKeyboard();
+            // 清理定时器
+            _timers.forEach(id => clearTimeout(id));
+            _timers = [];
+            // 清理音频节点（但不关闭共享的 AudioContext）
+            voices.forEach(nodes => nodes.forEach(n => { try{n.stop();}catch(e){} }));
+            voices = [];
+            rubVoices.forEach((v, idx) => {
+                try{v.osc1.stop();}catch(e){}
+                try{v.osc2.stop();}catch(e){}
+                try{v.lfo.stop();}catch(e){}
+            });
+            rubVoices.clear();
+        }
     };
 }
 

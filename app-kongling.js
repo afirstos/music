@@ -1,4 +1,6 @@
 // app-kongling.js — Kongling (Steel Tongue Drum) module for Music Hub
+// Uses shared AudioEngine for audio context
+
 const KonglingApp = (function() {
 
 const CSS = `
@@ -87,8 +89,7 @@ const HTML_TEMPLATE = `
     <div class="kongling-score-track kongling-score-track-el"></div>
 </div>
 <div class="kongling-progress-bar kongling-progress-bar-el">
-    <div class="kongling-progress-fill kongling-progress-fill-el"></div>
-</div>
+    <div class="kongling-progress-fill kongling-progress-fill-el"></div></div>
 <div class="kongling-drum-area">
     <div class="kongling-drum-container kongling-drum-container-el">
         <div class="kongling-drum-face kongling-drum-face-el"></div>
@@ -130,7 +131,6 @@ const SONGS = {
 // ── State ──
 let _container = null;
 let currentScale = 'D';
-let audioCtx = null, convolver = null, wetGain = null, dryGain = null;
 const MAX_VOICES = 12;
 let activeVoices = [];
 let tongueEls = [];
@@ -138,26 +138,13 @@ let scoreMode = false, currentSong = null, songIndex = 0, combo = 0, comboTimer 
 let _keyDownHandler = null, _keyUpHandler = null;
 const keyDown = {};
 
-function initAudio() {
-    if (audioCtx) return;
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const sampleRate = audioCtx.sampleRate, length = sampleRate * 2;
-    const impulse = audioCtx.createBuffer(2, length, sampleRate);
-    for (let ch = 0; ch < 2; ch++) {
-        const data = impulse.getChannelData(ch);
-        for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.5);
-    }
-    convolver = audioCtx.createConvolver(); convolver.buffer = impulse;
-    dryGain = audioCtx.createGain(); dryGain.gain.value = 0.6;
-    wetGain = audioCtx.createGain(); wetGain.gain.value = 0.4;
-    dryGain.connect(audioCtx.destination); convolver.connect(wetGain); wetGain.connect(audioCtx.destination);
-}
-
 function playNote(index) {
-    initAudio(); if (audioCtx.state === 'suspended') audioCtx.resume();
+    AudioEngine.getContext();
+    const { dry, wet, convolver } = AudioEngine.getReverb('metal');
+    const audioCtx = AudioEngine.getContext();
     const freq = SCALES[currentScale].freqs[index]; const now = audioCtx.currentTime;
     const output = audioCtx.createGain(); output.gain.setValueAtTime(1, now);
-    output.connect(dryGain); output.connect(convolver);
+    output.connect(dry); output.connect(convolver);
     const osc1 = audioCtx.createOscillator(); osc1.type='sine'; osc1.frequency.value=freq;
     const gain1 = audioCtx.createGain();
     gain1.gain.setValueAtTime(0,now); gain1.gain.linearRampToValueAtTime(0.35,now+0.005); gain1.gain.exponentialRampToValueAtTime(0.001,now+3);
@@ -172,7 +159,7 @@ function playNote(index) {
 }
 
 function muteAll() {
-    if (!audioCtx) return;
+    const audioCtx = AudioEngine.getContext();
     const now = audioCtx.currentTime;
     activeVoices.forEach(v => { try{v.output.gain.cancelScheduledValues(now);v.output.gain.setValueAtTime(v.output.gain.value,now);v.output.gain.linearRampToValueAtTime(0,now+0.08);}catch(e){} });
     activeVoices = [];
@@ -369,15 +356,20 @@ function init(container) {
     _container.querySelector('.kongling-restart-btn').addEventListener('click', () => { if (currentSong) loadSong(currentSong.id); });
     _container.querySelector('.kongling-reset-btn').addEventListener('click', resetSong);
 
-    container.addEventListener('touchstart', () => initAudio(), { once: true });
-    container.addEventListener('click', () => initAudio(), { once: true });
+    container.addEventListener('touchstart', () => AudioEngine.getContext(), { once: true });
+    container.addEventListener('click', () => AudioEngine.getContext(), { once: true });
 
     requestAnimationFrame(() => buildTongues());
 
     return {
         attachKeyboard() { document.addEventListener('keydown', _keyDownHandler); document.addEventListener('keyup', _keyUpHandler); },
         detachKeyboard() { document.removeEventListener('keydown', _keyDownHandler); document.removeEventListener('keyup', _keyUpHandler); },
-        destroy() { this.detachKeyboard(); }
+        destroy() {
+            this.detachKeyboard();
+            // 清理音频节点（但不关闭共享的 AudioContext）
+            activeVoices.forEach(v => { try{v.output.disconnect();}catch(e){} });
+            activeVoices = [];
+        }
     };
 }
 

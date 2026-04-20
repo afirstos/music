@@ -1,8 +1,9 @@
-const CACHE_NAME = 'music-hub-v2';
+const CACHE_NAME = 'music-hub-v5';
 
 const ASSETS = [
     './',
     './index.html',
+    './audio-engine.js',
     './app-piano.js',
     './app-songbo.js',
     './app-kongling.js',

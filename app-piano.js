@@ -1,5 +1,6 @@
 // app-piano.js — Piano module for Music Hub
 // Exports: { init(container), destroy(container) }
+// Uses shared AudioEngine for audio context
 
 const PianoApp = (function () {
     // ════════════════════════════════════════════════════════════════
@@ -193,7 +194,7 @@ const PianoApp = (function () {
     }
 `;
 
-    // HTML 模板（注入到 container 内）
+    // HTML 模板
     const PIANO_HTML = `<div class="piano-controls-area">
     <div class="piano-score-controls">
         <button class="piano-score-btn" id="scoreToggle">📖 曲谱</button>
@@ -275,19 +276,16 @@ const PianoApp = (function () {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 音频引擎
+    // 音频引擎 — 使用共享 AudioEngine
     // ════════════════════════════════════════════════════════════════
     const MAX_POLYPHONY = 10;
     let activeOscillators = [];
-    let audioContext = null;
-
-    function initAudio() {
-        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        if (audioContext.state === 'suspended') audioContext.resume();
-    }
 
     function playNote(frequency) {
-        initAudio();
+        const audioContext = AudioEngine.getContext();
+        // 获取高质量混响（metal 类型适合钢琴）
+        const { dry, convolver } = AudioEngine.getReverb('metal');
+        
         if (activeOscillators.length >= MAX_POLYPHONY) {
             const oldest = activeOscillators.shift();
             try { oldest.forEach(o => o.stop()); } catch (e) { }
@@ -298,7 +296,10 @@ const PianoApp = (function () {
         lpf.frequency.setValueAtTime(Math.min(frequency * 6, 8000), now);
         lpf.frequency.linearRampToValueAtTime(Math.min(frequency * 3, 4000), now + 0.5);
         lpf.Q.setValueAtTime(0.7, now);
-        lpf.connect(audioContext.destination);
+        // 连接到干声和混响
+        lpf.connect(dry);
+        lpf.connect(convolver);
+
         const masterGain = audioContext.createGain();
         masterGain.gain.setValueAtTime(0.5, now);
         masterGain.connect(lpf);
@@ -424,6 +425,51 @@ const PianoApp = (function () {
         return null;
     }
 
+    // ════════════════════════════════════════════════════════════════
+    // 自动八度适配 — 检查曲谱音符范围，自动调整 baseOctave
+    // ════════════════════════════════════════════════════════════════
+    function autoShiftOctaveForSong(songId) {
+        const song = SONGS[songId];
+        if (!song) return;
+        const octaves = [];
+        song.notes.forEach(n => {
+            if (n === '_') return;
+            const m = n.match(/^([A-G]#?)(\d)$/);
+            if (m) octaves.push(parseInt(m[2]));
+        });
+        if (octaves.length === 0) return;
+        const minOct = Math.min(...octaves);
+        const maxOct = Math.max(...octaves);
+        // 当前范围: baseOctave 到 baseOctave+1
+        if (minOct >= baseOctave && maxOct <= baseOctave + 1) return; // 已经适配
+        // 尝试找到一个能覆盖所有音符的八度范围
+        for (let oct = MIN_OCTAVE; oct <= MAX_OCTAVE; oct++) {
+            if (minOct >= oct && maxOct <= oct + 1) {
+                baseOctave = oct;
+                buildPiano();
+                return;
+            }
+        }
+        // 如果没有单个八度范围能完全覆盖，选择覆盖最多音符的
+        let bestOct = baseOctave, bestCount = 0;
+        for (let oct = MIN_OCTAVE; oct <= MAX_OCTAVE; oct++) {
+            let count = 0;
+            song.notes.forEach(n => {
+                if (n === '_') return;
+                const m = n.match(/^([A-G]#?)(\d)$/);
+                if (m) {
+                    const o = parseInt(m[2]);
+                    if (o >= oct && o <= oct + 1) count++;
+                }
+            });
+            if (count > bestCount) { bestCount = count; bestOct = oct; }
+        }
+        if (bestOct !== baseOctave) {
+            baseOctave = bestOct;
+            buildPiano();
+        }
+    }
+
     // ── 模块级状态：container 引用，供内部函数使用 ──
     let _container = null;
 
@@ -442,7 +488,7 @@ const PianoApp = (function () {
     function init(container) {
         _container = container;
 
-        // 1. 注入 CSS（注入到 container 前面）
+        // 1. 注入 CSS
         if (container.parentElement) {
             container.insertAdjacentHTML('beforebegin', '<style>' + PIANO_CSS + '</style>');
         } else {
@@ -458,7 +504,7 @@ const PianoApp = (function () {
         // 4. 构建钢琴
         buildPiano();
 
-        // 5. 触摸事件绑定在 piano-container 上
+        // 5. 触摸事件绑定 — 加 stopPropagation 防止与 shell 滑动冲突
         pianoContainerEl.addEventListener('touchstart', handleTouchStart, { passive: false });
         pianoContainerEl.addEventListener('touchmove', handleTouchMove, { passive: false });
         pianoContainerEl.addEventListener('touchend', handleTouchEnd, { passive: false });
@@ -471,7 +517,7 @@ const PianoApp = (function () {
         container.querySelector('#songSelect').addEventListener('change', function (e) { loadSong(e.target.value); });
         container.querySelector('#scoreReset').addEventListener('click', function () { loadSong(currentSong); });
 
-        // 7. install hint（简化逻辑）
+        // 7. install hint
         if (!window.matchMedia('(display-mode: fullscreen)').matches &&
             !window.matchMedia('(display-mode: standalone)').matches &&
             !window.navigator.standalone) {
@@ -501,7 +547,7 @@ const PianoApp = (function () {
         };
 
         container._mousedownHandler = function (e) {
-            mouseIsDown = true; initAudio();
+            mouseIsDown = true; AudioEngine.getContext();
             const el = getKeyElementAt(e.clientX, e.clientY);
             if (el) { mouseActiveKey = el; activateKey(el, el.dataset.note); }
         };
@@ -526,11 +572,10 @@ const PianoApp = (function () {
         // 清理定时器
         _timers.forEach(function (id) { clearTimeout(id); });
         _timers = [];
-        // 清理音频
-        try {
-            if (audioContext && audioContext.state !== 'closed') audioContext.close();
-        } catch (e) { }
-        audioContext = null;
+        // 清理音频振荡器（但不关闭共享的 AudioContext）
+        activeOscillators.forEach(oscs => {
+            try { oscs.forEach(o => o.stop()); } catch (e) { }
+        });
         activeOscillators = [];
         // 清除 handler 引用
         if (container) {
@@ -544,7 +589,7 @@ const PianoApp = (function () {
     }
 
     // ════════════════════════════════════════════════════════════════
-    // 辅助函数：通过 container 查询 DOM
+    // 辅助函数
     // ════════════════════════════════════════════════════════════════
     function $(sel) {
         return (_container || document).querySelector(sel);
@@ -569,6 +614,8 @@ const PianoApp = (function () {
 
     function loadSong(songId) {
         currentSong = songId;
+        // 自动调整八度以适配曲谱
+        autoShiftOctaveForSong(songId);
         scoreIndex = 0; combo = 0;
         scoreNotes = SONGS[songId].notes;
         scoreRealNotes = scoreNotes.filter(function (n) { return n !== '_'; });
@@ -615,7 +662,6 @@ const PianoApp = (function () {
             var noteWidth = current.offsetWidth;
             var scWidth = sc.offsetWidth;
             var scScrollLeft = sc.scrollLeft;
-            // 只在 scoreDisplay 内部滚动，不触发外层页面滚动
             if (noteLeft - scScrollLeft < 10) {
                 sc.scrollLeft = noteLeft - 10;
             } else if (noteLeft + noteWidth - scScrollLeft > scWidth - 10) {
@@ -774,7 +820,9 @@ const PianoApp = (function () {
     }
 
     function handleTouchStart(e) {
-        e.preventDefault(); initAudio();
+        e.preventDefault();
+        e.stopPropagation(); // 阻止冒泡到 shell，防止滑动手势冲突
+        AudioEngine.getContext();
         for (var i = 0; i < e.changedTouches.length; i++) {
             var touch = e.changedTouches[i];
             var el = getKeyElementAt(touch.clientX, touch.clientY);
@@ -784,6 +832,7 @@ const PianoApp = (function () {
 
     function handleTouchMove(e) {
         e.preventDefault();
+        e.stopPropagation(); // 同上
         for (var i = 0; i < e.changedTouches.length; i++) {
             var touch = e.changedTouches[i];
             if (!touchActiveKeys.has(touch.identifier)) continue;
@@ -799,6 +848,7 @@ const PianoApp = (function () {
 
     function handleTouchEnd(e) {
         e.preventDefault();
+        e.stopPropagation(); // 同上
         for (var i = 0; i < e.changedTouches.length; i++) {
             var touch = e.changedTouches[i];
             var el = touchActiveKeys.get(touch.identifier);
@@ -820,7 +870,6 @@ const PianoApp = (function () {
     return { init: init, destroy: destroy };
 })();
 
-// Attach to window for external access
 if (typeof window !== 'undefined') {
     window.PianoApp = PianoApp;
 }

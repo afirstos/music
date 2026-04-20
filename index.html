@@ -33,6 +33,46 @@ body {
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(255,255,255,0.08);
 }
+
+/* ===== 音量控制 ===== */
+.shell-volume {
+    position: fixed; top: 6px; right: 10px;
+    z-index: 501;
+    display: flex; align-items: center; gap: 4px;
+    transition: opacity 0.3s;
+}
+.shell-volume-btn {
+    background: none; border: none;
+    color: rgba(255,255,255,0.6);
+    font-size: 16px; cursor: pointer;
+    padding: 2px; line-height: 1;
+    touch-action: manipulation;
+}
+.shell-volume-btn:hover { color: #fff; }
+.shell-volume-slider {
+    width: 0; opacity: 0;
+    transition: width 0.3s ease, opacity 0.3s ease;
+    -webkit-appearance: none; appearance: none;
+    height: 4px; border-radius: 2px;
+    background: rgba(255,255,255,0.2);
+    outline: none;
+}
+.shell-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #c9a84c;
+    cursor: pointer;
+}
+.shell-volume-slider::-moz-range-thumb {
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    background: #c9a84c;
+    cursor: pointer; border: none;
+}
+.shell-volume.open .shell-volume-slider {
+    width: 80px; opacity: 1;
+}
 .shell-tabs {
     display: flex; gap: 4px;
     position: relative;
@@ -125,6 +165,7 @@ body {
     .shell-tab { padding: 4px 12px; font-size: 12px; }
     .shell-page .page-content { padding-top: 34px; }
     #page-piano .page-content { padding-top: 34px; padding-left: 8px; padding-right: 8px; }
+    .shell-volume { top: 3px; }
 }
 </style>
 </head>
@@ -139,6 +180,12 @@ body {
         <div class="shell-indicator" id="shellIndicator"></div>
     </div>
 </nav>
+
+<!-- 音量控制 -->
+<div class="shell-volume" id="shellVolume">
+    <button class="shell-volume-btn" id="volumeBtn" title="音量">🔊</button>
+    <input type="range" class="shell-volume-slider" id="volumeSlider" min="0" max="100" value="70">
+</div>
 
 <!-- 页面容器 -->
 <div class="shell-pages" id="shellPages">
@@ -281,8 +328,57 @@ document.querySelectorAll('.shell-tab').forEach(tab => {
     });
 });
 
+// ── 音量控制 ──
+const volumeBtn = document.getElementById('volumeBtn');
+const volumeSlider = document.getElementById('volumeSlider');
+const volumeWrap = document.getElementById('shellVolume');
+let volumeOpen = false;
+
+function updateVolumeIcon(v) {
+    if (v === 0) volumeBtn.textContent = '🔇';
+    else if (v < 0.4) volumeBtn.textContent = '🔈';
+    else if (v < 0.75) volumeBtn.textContent = '🔉';
+    else volumeBtn.textContent = '🔊';
+}
+
+volumeBtn.addEventListener('click', () => {
+    volumeOpen = !volumeOpen;
+    volumeWrap.classList.toggle('open', volumeOpen);
+    // 首次点击确保 AudioContext 就绪
+    if (typeof AudioEngine !== 'undefined') {
+        AudioEngine.getContext();
+        volumeSlider.value = Math.round(AudioEngine.getVolume() * 100);
+        updateVolumeIcon(AudioEngine.getVolume());
+    }
+});
+
+volumeSlider.addEventListener('input', () => {
+    if (typeof AudioEngine !== 'undefined') {
+        const v = volumeSlider.value / 100;
+        AudioEngine.setVolume(v);
+        updateVolumeIcon(v);
+    }
+});
+
+// 点击其他地方关闭滑块
+document.addEventListener('click', (e) => {
+    if (volumeOpen && !volumeWrap.contains(e.target)) {
+        volumeOpen = false;
+        volumeWrap.classList.remove('open');
+    }
+});
+
 // ── 初始化各 App ──
 async function initApps() {
+    // 先加载共享的 AudioEngine
+    await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'audio-engine.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+
     // 动态加载 app scripts
     const scriptPromises = APP_NAMES.map(name => {
         return new Promise((resolve, reject) => {
