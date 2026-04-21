@@ -1,4 +1,4 @@
-const CACHE_NAME = 'music-hub-v9';
+const CACHE_NAME = 'music-hub-v10';
 
 const ASSETS = [
     './',
