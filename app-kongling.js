@@ -78,7 +78,7 @@ const HTML_TEMPLATE = `
     </select>
     <button class="kongling-score-toggle">📖 曲谱</button>
     <select class="kongling-song-select" style="display:none">
-        <!-- 动态生成 by buildSongSelect() -->
+        <!-- 动态生成 by ScoreController.populateSongSelect() -->
     </select>
     <button class="kongling-restart-btn" style="display:none">↺ 重来</button>
 </div>
@@ -119,40 +119,17 @@ const TONGUE_POSITIONS = [
     {left:30,top:33},{left:70,top:33},{left:50,top:15}
 ];
 const SONGS = MusicSongs.songs;
-var resolvedNotes = []; // resolveNotes() 后的鼓舌编号列表
 
 function getScaleNoteNames() {
     return SCALES[currentScale].notes;
 }
 
-function resolveCurrentSong() {
-    if (!currentSong) { resolvedNotes = []; return; }
-    var notes = currentSong.notes || (SONGS[currentSong] && SONGS[currentSong].notes);
-    if (!notes) { resolvedNotes = []; return; }
-    resolvedNotes = MusicSongs.resolveNotes(notes, getScaleNoteNames());
-}
-
-function buildSongSelect() {
-    var sel = _container.querySelector('.kongling-song-select'); sel.innerHTML = '';
-    var scaleNames = getScaleNoteNames();
-    MusicSongs.groups.forEach(function (g) {
-        var optgroup = document.createElement('optgroup');
-        optgroup.label = g.label;
-        var hasAny = false;
-        g.keys.forEach(function (k) {
-            var song = MusicSongs.songs[k];
-            if (song.fit === 'piano') return;
-            var check = MusicSongs.checkPlayable(song.notes, scaleNames);
-            var label = song.name;
-            if (check.unplayable > 0) label += ' ⚠️(' + check.unplayable + '音不可弹)';
-            var opt = document.createElement('option');
-            opt.value = k; opt.textContent = label;
-            opt.title = check.unplayable > 0 ? check.unplayable + '个音在当前音阶下无法弹奏' : '所有音均可弹奏';
-            optgroup.appendChild(opt);
-            hasAny = true;
-        });
-        if (hasAny) sel.appendChild(optgroup);
-    });
+// ── Timer tracking ──
+let _timers = [];
+function _setTimeout(fn, ms) {
+    const id = setTimeout(fn, ms);
+    _timers.push(id);
+    return id;
 }
 
 // ── State ──
@@ -161,9 +138,15 @@ let currentScale = 'C';
 const MAX_VOICES = 12;
 let activeVoices = [];
 let tongueEls = [];
-let scoreMode = false, currentSong = null, songIndex = 0, combo = 0, comboTimer = null;
+let comboTimer = null;
 let _keyDownHandler = null, _keyUpHandler = null;
 const keyDown = {};
+var _sc = null;
+
+function _populateSongSelect() {
+    var sel = _container.querySelector('.kongling-song-select');
+    ScoreController.populateSongSelect(sel, getScaleNoteNames(), { fitFilter: 'piano', currentValue: _sc ? _sc.getCurrentSongId() : null });
+}
 
 function playNote(index) {
     AudioEngine.getContext();
@@ -182,7 +165,7 @@ function playNote(index) {
     osc2.connect(gain2); gain2.connect(output); osc2.start(now); osc2.stop(now+1.6);
     const voice = {output,time:now}; activeVoices.push(voice);
     if (activeVoices.length > MAX_VOICES) { const old = activeVoices.shift(); try{old.output.disconnect();}catch(e){} }
-    setTimeout(() => { const idx = activeVoices.indexOf(voice); if(idx!==-1)activeVoices.splice(idx,1); try{output.disconnect();}catch(e){} }, 3200);
+    _setTimeout(() => { const idx = activeVoices.indexOf(voice); if(idx!==-1)activeVoices.splice(idx,1); try{output.disconnect();}catch(e){} }, 3200);
 }
 
 function muteAll() {
@@ -192,7 +175,7 @@ function muteAll() {
     activeVoices = [];
     const msg = _container.querySelector('.kongling-status-msg-el');
     if (msg) { msg.textContent = '🤚 止音'; msg.className = 'kongling-status-msg'; }
-    setTimeout(() => { if(msg && msg.textContent==='🤚 止音'){msg.textContent=scoreMode?'跟着提示弹奏':'按下鼓舌或键盘演奏';msg.className='kongling-status-msg';} }, 800);
+    _setTimeout(() => { if(msg && msg.textContent==='🤚 止音'){msg.textContent=(_sc && _sc.isActive())?'跟着提示弹奏':'按下鼓舌或键盘演奏';msg.className='kongling-status-msg';} }, 800);
 }
 
 function buildTongues() {
@@ -212,11 +195,11 @@ function buildTongues() {
 
 function hitTongue(index, event) {
     playNote(index); animateHit(index); createRipple(index, event);
-    if (scoreMode && currentSong) checkScore(index);
+    if (_sc && _sc.isActive()) _sc.check(index);
     else { const msg = _container.querySelector('.kongling-status-msg-el'); if (msg) { msg.textContent = `🎵 ${SCALES[currentScale].notes[index]}`; msg.className = 'kongling-status-msg'; } }
 }
 
-function animateHit(index) { const el = tongueEls[index]; el.classList.add('hit'); setTimeout(() => el.classList.remove('hit'), 150); }
+function animateHit(index) { const el = tongueEls[index]; el.classList.remove('hit'); void el.offsetWidth; el.classList.add('hit'); _setTimeout(() => el.classList.remove('hit'), 150); }
 
 function createRipple(index, event) {
     const pos = TONGUE_POSITIONS[index]; let left = pos.left+'%', top = pos.top+'%';
@@ -228,39 +211,22 @@ function createRipple(index, event) {
     const ripple = document.createElement('div'); ripple.className = 'kongling-ripple';
     ripple.style.left = left; ripple.style.top = top;
     _container.querySelector('.kongling-drum-face-el').appendChild(ripple);
-    setTimeout(() => ripple.remove(), 800);
+    _setTimeout(() => ripple.remove(), 800);
 }
 
-// ── Score ──
-function toggleScoreMode() {
-    scoreMode = !scoreMode;
-    _container.querySelector('.kongling-score-toggle').classList.toggle('active', scoreMode);
-    _container.querySelector('.kongling-song-select').style.display = scoreMode ? '' : 'none';
-    _container.querySelector('.kongling-restart-btn').style.display = scoreMode ? '' : 'none';
-    _container.querySelector('.kongling-score-bar-el').classList.toggle('visible', scoreMode);
-    _container.querySelector('.kongling-progress-bar-el').classList.toggle('visible', scoreMode);
-    if (scoreMode) loadSong(_container.querySelector('.kongling-song-select').value);
-    else { clearScore(); _container.querySelector('.kongling-status-msg-el').textContent = '按下鼓舌或键盘 A S D F J K L ; 演奏'; }
-}
-
-function loadSong(songId) {
-    const song = SONGS[songId]; if (!song) return;
-    currentSong = { id: songId, name: song.name, notes: song.notes }; songIndex = 0; combo = 0; hideCombo();
-    resolveCurrentSong();
-    renderScore(); highlightNextTongue();
-    const msg = _container.querySelector('.kongling-status-msg-el');
-    msg.textContent = `🎵 ${song.name} — 跟着提示弹奏`; msg.className = 'kongling-status-msg';
-}
+// ── Score DOM / UI (kept in app, driven by ScoreController callbacks) ──
 
 function renderScore() {
-    const track = _container.querySelector('.kongling-score-track-el'); track.innerHTML = '';
-    const scale = SCALES[currentScale];
-    currentSong.notes.forEach(function (n, i) {
+    var track = _container.querySelector('.kongling-score-track-el'); track.innerHTML = '';
+    var scale = SCALES[currentScale];
+    var song = _sc.getCurrentSong();
+    var resolved = _sc.getResolved();
+    song.notes.forEach(function (n, i) {
         const noteEl = document.createElement('div'); noteEl.className = 'kongling-score-note';
         if (n === '_') {
             noteEl.innerHTML = '<span>·</span>';
         } else {
-            var deg = resolvedNotes[i];
+            var deg = resolved[i];
             if (deg === -2) {
                 noteEl.innerHTML = '<span style="opacity:.35">' + n + '</span><span style="font-size:9px;opacity:.35;margin-top:1px">?</span>';
                 noteEl.title = '当前音阶无法弹奏此音';
@@ -270,57 +236,33 @@ function renderScore() {
         }
         noteEl.dataset.idx = i; track.appendChild(noteEl);
     });
-    updateScoreScroll(); updateProgress();
+    updateScoreDisplay(); updateProgress(_sc.getProgress());
 }
 
-function updateScoreScroll() {
-    const noteWidth = 44; const offset = -songIndex * noteWidth;
+function updateScoreDisplay() {
+    var idx = _sc.getIndex();
+    const noteWidth = 44; const offset = -idx * noteWidth;
     _container.querySelector('.kongling-score-track-el').style.transform = `translateX(${offset}px)`;
     const notes = _container.querySelector('.kongling-score-track-el').children;
-    for (let i = 0; i < notes.length; i++) notes[i].classList.remove('current');
-    if (notes[songIndex]) notes[songIndex].classList.add('current');
+    for (let i = 0; i < notes.length; i++) {
+        notes[i].classList.remove('current', 'played', 'missed');
+        if (i < idx) notes[i].classList.add('played');
+        else if (i === idx) notes[i].classList.add('current');
+    }
 }
 
-function updateProgress() {
-    if (!currentSong || !resolvedNotes.length) return;
-    _container.querySelector('.kongling-progress-fill-el').style.width = (songIndex / resolvedNotes.length * 100) + '%';
+function updateProgress(pct) {
+    _container.querySelector('.kongling-progress-fill-el').style.width = pct + '%';
 }
 
 function highlightNextTongue() {
     tongueEls.forEach(function(el) { el.querySelector('.kongling-star-hint').classList.remove('visible'); });
-    if (!currentSong || songIndex >= resolvedNotes.length) return;
-    var idx = resolvedNotes[songIndex];
-    if (idx >= 0 && tongueEls[idx]) tongueEls[idx].querySelector('.kongling-star-hint').classList.add('visible');
-}
-
-function checkScore(playedIndex) {
-    if (!currentSong || songIndex >= resolvedNotes.length) return;
-    var expectedIdx = resolvedNotes[songIndex];
-    const msg = _container.querySelector('.kongling-status-msg-el');
-    // 跳过休止符和无法映射的音符
-    if (expectedIdx < 0) {
-        songIndex++; updateScoreScroll(); updateProgress(); highlightNextTongue();
-        if (songIndex >= resolvedNotes.length) songFinished();
-        return;
-    }
-    if (playedIndex === expectedIdx) {
-        combo++;
-        const noteEl = _container.querySelector('.kongling-score-track-el').children[songIndex];
-        if (noteEl) noteEl.classList.add('played');
-        spawnStarParticles(playedIndex);
-        if (combo >= 3) showCombo(combo);
-        songIndex++; updateScoreScroll(); updateProgress(); highlightNextTongue();
-        if (msg) { msg.textContent = combo >= 3 ? `✨×${combo} 连击！` : '✓ 正确'; msg.className = 'kongling-status-msg success'; }
-        if (songIndex >= resolvedNotes.length) songFinished();
-    } else {
-        combo = 0; hideCombo(); const scale = SCALES[currentScale];
-        if (msg) { msg.textContent = `✗ 应弹 ${scale.notes[expectedIdx]}`; msg.className = 'kongling-status-msg error'; }
-        const noteEl = _container.querySelector('.kongling-score-track-el').children[songIndex];
-        if (noteEl) { noteEl.classList.add('missed'); setTimeout(() => noteEl.classList.remove('missed'), 600); }
-        if (tongueEls[playedIndex]) { tongueEls[playedIndex].classList.add('wrong'); setTimeout(() => tongueEls[playedIndex].classList.remove('wrong'), 400); }
-        const starEl = tongueEls[expectedIdx] && tongueEls[expectedIdx].querySelector('.kongling-star-hint');
-        if (starEl) { starEl.style.animation = 'none'; starEl.offsetHeight; starEl.style.animation = 'kongling-starFlash .5s ease 2'; }
-    }
+    if (!_sc || !_sc.isActive()) return;
+    var resolved = _sc.getResolved();
+    var idx = _sc.getIndex();
+    if (idx >= resolved.length) return;
+    var tongueIdx = resolved[idx];
+    if (tongueIdx >= 0 && tongueEls[tongueIdx]) tongueEls[tongueIdx].querySelector('.kongling-star-hint').classList.add('visible');
 }
 
 function spawnStarParticles(index) {
@@ -334,32 +276,34 @@ function spawnStarParticles(index) {
         star.style.left = cx + 'px'; star.style.top = cy + 'px';
         star.style.setProperty('--dx', Math.cos(angle)*dist+'px');
         star.style.setProperty('--dy', Math.sin(angle)*dist+'px');
-        _container.appendChild(star); setTimeout(() => star.remove(), 700);
+        _container.appendChild(star); _setTimeout(() => star.remove(), 700);
     }
 }
 
 function showCombo(n) {
     const el = _container.querySelector('.kongling-combo-display-el'); el.textContent = `✨×${n}`;
-    el.classList.add('show'); clearTimeout(comboTimer); comboTimer = setTimeout(() => el.classList.remove('show'), 1000);
+    el.classList.add('show'); clearTimeout(comboTimer); comboTimer = _setTimeout(() => el.classList.remove('show'), 1000);
 }
 function hideCombo() { _container.querySelector('.kongling-combo-display-el').classList.remove('show'); }
 
 function songFinished() {
     highlightNextTongue();
-    _container.querySelector('.kongling-finish-text-el').textContent = combo >= 10 ? '太棒了！完美演奏！🌟' : '演奏完成，继续加油！';
+    var maxCombo = _sc.getMaxCombo();
+    _container.querySelector('.kongling-finish-text-el').textContent = maxCombo >= 10 ? '太棒了！完美演奏！🌟' : '演奏完成，继续加油！';
     _container.querySelector('.kongling-finish-overlay-el').classList.add('show');
+    _setTimeout(function () { resetSong(); }, 3000);
 }
 
 function resetSong() {
     _container.querySelector('.kongling-finish-overlay-el').classList.remove('show');
-    if (currentSong) loadSong(currentSong.id);
+    if (_sc && _sc.getCurrentSongId()) _sc.loadSong(_sc.getCurrentSongId());
 }
 
-function clearScore() {
+function clearScoreUI() {
     _container.querySelector('.kongling-score-track-el').innerHTML = '';
     _container.querySelector('.kongling-progress-fill-el').style.width = '0%';
-    currentSong = null; songIndex = 0; combo = 0; hideCombo();
-    tongueEls.forEach(el => el.querySelector('.kongling-star-hint').classList.remove('visible'));
+    hideCombo();
+    tongueEls.forEach(function (el) { el.querySelector('.kongling-star-hint').classList.remove('visible'); });
 }
 
 // ── init ──
@@ -369,6 +313,76 @@ function init(container) {
     const styleEl = document.createElement('style'); styleEl.textContent = CSS; container.appendChild(styleEl);
     const wrapper = document.createElement('div'); wrapper.className = 'kongling-app';
     wrapper.innerHTML = HTML_TEMPLATE; container.appendChild(wrapper);
+
+    // ── 创建 ScoreController 实例 ──
+    _sc = ScoreController.create({
+        instrument: 'kongling',
+        getScaleNotes: getScaleNoteNames,
+        skipRests: true,
+        defaultSong: null,
+        onToggle: function (active) {
+            _container.querySelector('.kongling-score-toggle').classList.toggle('active', active);
+            _container.querySelector('.kongling-song-select').style.display = active ? '' : 'none';
+            _container.querySelector('.kongling-restart-btn').style.display = active ? '' : 'none';
+            _container.querySelector('.kongling-score-bar-el').classList.toggle('visible', active);
+            _container.querySelector('.kongling-progress-bar-el').classList.toggle('visible', active);
+            if (!active) {
+                clearScoreUI();
+                _container.querySelector('.kongling-status-msg-el').textContent = '按下鼓舌或键盘 A S D F J K L ; 演奏';
+            }
+        },
+        onLoad: function (songId, songData, resolved) {
+            hideCombo();
+            renderScore();
+            highlightNextTongue();
+            var msg = _container.querySelector('.kongling-status-msg-el');
+            msg.textContent = '🎵 ' + songData.name + ' — 跟着提示弹奏';
+            msg.className = 'kongling-status-msg';
+        },
+        onCorrect: function (info) {
+            var noteEl = _container.querySelector('.kongling-score-track-el').children[info.scoreIndex];
+            if (noteEl) noteEl.classList.add('played');
+            if (info.noteIndex >= 0) spawnStarParticles(info.noteIndex);
+            updateScoreDisplay();
+            highlightNextTongue();
+            var msg = _container.querySelector('.kongling-status-msg-el');
+            if (msg) {
+                msg.textContent = info.combo >= 3 ? '✨×' + info.combo + ' 连击！' : '✓ 正确';
+                msg.className = 'kongling-status-msg success';
+            }
+            if (info.isFinished) songFinished();
+        },
+        onWrong: function (info) {
+            hideCombo();
+            var scale = SCALES[currentScale];
+            var msg = _container.querySelector('.kongling-status-msg-el');
+            if (msg) {
+                msg.textContent = '✗ 应弹 ' + info.expectedNote;
+                msg.className = 'kongling-status-msg error';
+            }
+            var idx = _sc.getIndex();
+            var noteEl = _container.querySelector('.kongling-score-track-el').children[idx];
+            if (noteEl) { noteEl.classList.add('missed'); _setTimeout(function () { noteEl.classList.remove('missed'); }, 600); }
+            if (tongueEls[info.playedIndex]) { tongueEls[info.playedIndex].classList.add('wrong'); _setTimeout(function () { tongueEls[info.playedIndex].classList.remove('wrong'); }, 400); }
+            var expectedIdx = info.expectedIndex;
+            var starEl = tongueEls[expectedIdx] && tongueEls[expectedIdx].querySelector('.kongling-star-hint');
+            if (starEl) { starEl.style.animation = 'none'; starEl.offsetHeight; starEl.style.animation = 'kongling-starFlash .5s ease 2'; }
+        },
+        onFinish: function (stats) {
+            // 完成由 onCorrect 中 isFinished 触发 songFinished
+        },
+        onReset: function () {
+            hideCombo();
+            renderScore();
+            highlightNextTongue();
+        },
+        onCombo: function (c) {
+            showCombo(c);
+        },
+        onProgress: function (pct) {
+            updateProgress(pct);
+        }
+    });
 
     // Keyboard handlers
     _keyDownHandler = (e) => {
@@ -383,12 +397,17 @@ function init(container) {
     _container.querySelector('.kongling-scale-select').addEventListener('change', () => {
         currentScale = _container.querySelector('.kongling-scale-select').value;
         buildTongues();
-        buildSongSelect();
-        if (scoreMode && currentSong) {
-            const si = songIndex, co = combo; loadSong(currentSong.id); songIndex = si; combo = co;
-            const notes = _container.querySelector('.kongling-score-track-el').children;
-            for (let i = 0; i < si && i < notes.length; i++) notes[i].classList.add('played');
-            updateScoreScroll(); updateProgress(); highlightNextTongue();
+        _populateSongSelect();
+        if (_sc.isActive() && _sc.getCurrentSongId()) {
+            var si = _sc.getIndex(), co = _sc.getCombo();
+            _sc.reResolve();
+            _sc.loadSong(_sc.getCurrentSongId());
+            _sc.setIndex(si);
+            // Restore played state visually
+            var notes = _container.querySelector('.kongling-score-track-el').children;
+            for (var i = 0; i < si && i < notes.length; i++) notes[i].classList.add('played');
+            updateScoreDisplay();
+            highlightNextTongue();
         }
     });
 
@@ -400,22 +419,31 @@ function init(container) {
         if (val === 'copper') appEl.classList.add('theme-copper');
     });
 
-    buildSongSelect();
-    _container.querySelector('.kongling-score-toggle').addEventListener('click', toggleScoreMode);
+    _populateSongSelect();
+    _container.querySelector('.kongling-score-toggle').addEventListener('click', function () {
+        _sc.toggle();
+        if (_sc.isActive()) {
+            var songId = _container.querySelector('.kongling-song-select').value;
+            if (songId) _sc.loadSong(songId);
+        }
+    });
     _container.querySelector('.kongling-song-select').addEventListener('change', () => {
-        if (scoreMode) {
+        if (_sc.isActive()) {
             var songId = _container.querySelector('.kongling-song-select').value;
             // 自动切换到建议音阶
             var song = MusicSongs.songs[songId];
             if (song && song.scaleHint && song.scaleHint.kongling && song.scaleHint.kongling !== currentScale) {
                 currentScale = song.scaleHint.kongling;
                 _container.querySelector('.kongling-scale-select').value = currentScale;
-                buildTongues(); buildSongSelect();
+                buildTongues(); _populateSongSelect();
+                _container.querySelector('.kongling-song-select').value = songId;
             }
-            loadSong(songId);
+            _sc.loadSong(songId);
         }
     });
-    _container.querySelector('.kongling-restart-btn').addEventListener('click', () => { if (currentSong) loadSong(currentSong.id); });
+    _container.querySelector('.kongling-restart-btn').addEventListener('click', () => {
+        if (_sc && _sc.getCurrentSongId()) _sc.loadSong(_sc.getCurrentSongId());
+    });
     _container.querySelector('.kongling-reset-btn').addEventListener('click', resetSong);
 
     container.addEventListener('touchstart', () => AudioEngine.getContext(), { once: true });
@@ -429,6 +457,11 @@ function init(container) {
         detachKeyboard() { document.removeEventListener('keydown', _keyDownHandler); document.removeEventListener('keyup', _keyUpHandler); },
         destroy() {
             this.detachKeyboard();
+            // 清理定时器
+            _timers.forEach(id => clearTimeout(id));
+            _timers = [];
+            // 清理 ScoreController
+            if (_sc) { _sc.destroy(); _sc = null; }
             // 清理音频节点（但不关闭共享的 AudioContext）
             activeVoices.forEach(v => { try{v.output.disconnect();}catch(e){} });
             activeVoices = [];

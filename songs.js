@@ -11,11 +11,11 @@ var MusicSongs = (function () {
         // ── 经典小曲 ──
         twinkle: {
             name: '小星星',
-            fit: 'all', scaleHint: { songbo: 'chakra', kongling: 'C' },
+            fit: 'all', scaleHint: { songbo: 'highC', kongling: 'C' },
             notes: [
-                'C3','C3','G3','G3','A3','A3','G3','_','F3','F3','E3','E3','D3','D3','C3','_',
-                'G3','G3','F3','F3','E3','E3','D3','_','G3','G3','F3','F3','E3','E3','D3','_',
-                'C3','C3','G3','G3','A3','A3','G3','_','F3','F3','E3','E3','D3','D3','C3'
+                'C4','C4','G4','G4','A4','A4','G4','_','F4','F4','E4','E4','D4','D4','C4','_',
+                'G4','G4','F4','F4','E4','E4','D4','_','G4','G4','F4','F4','E4','E4','D4','_',
+                'C4','C4','G4','G4','A4','A4','G4','_','F4','F4','E4','E4','D4','D4','C4'
             ]
         },
         ode: {
@@ -189,9 +189,7 @@ var MusicSongs = (function () {
     // 升降号映射：找不到 F# 时尝试 F 或 G
     var SHARP_ALIASES = {
         'C#': ['C','D'], 'D#': ['D','E'], 'F#': ['F','G'],
-        'G#': ['G','A'], 'A#': ['A','B'], 'Bb': ['A','B'],
-        'Db': ['C','D'], 'Eb': ['D','E'], 'Gb': ['F','G'],
-        'Ab': ['G','A'], 'Bb': ['A','B']
+        'G#': ['G','A'], 'A#': ['A','B']
     };
     var FLAT_TO_SHARP = { 'Db':'C#','Eb':'D#','Fb':'E','Gb':'F#','Ab':'G#','Bb':'A#','Cb':'B' };
 

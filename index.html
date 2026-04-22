@@ -394,6 +394,15 @@ async function initApps() {
         document.head.appendChild(script);
     });
 
+    // 加载共享曲谱控制器
+    await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'score-controller.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+    });
+
     // 动态加载 app scripts
     const scriptPromises = APP_NAMES.map(name => {
         return new Promise((resolve, reject) => {

@@ -88,7 +88,7 @@ const HTML_TEMPLATE = `
 <div class="songbo-score-panel songbo-score-panel-el">
     <div class="songbo-score-bar">
         <select class="songbo-song-select">
-            <!-- 动态生成 by buildSongSelect() -->
+            <!-- 动态生成 by ScoreController.populateSongSelect() -->
         </select>
         <button class="songbo-restart-btn">↺ 重来</button>
     </div>
@@ -118,7 +118,6 @@ const SCALES = {
 };
 
 const SONGS = MusicSongs.songs;
-var resolvedNotes = []; // resolveNotes() 后的碗编号列表
 
 const KEY_MAP = {a:0,s:1,d:2,f:3,j:4,k:5,l:6};
 
@@ -129,44 +128,20 @@ let _savedSubVolume = 1.0;
 let currentScale = 'chakra';
 let voices = [], rubVoices = new Map();
 const MAX_VOICES = 10;
-let scoreMode = false, currentSong = 'chakra_med', scoreIndex = 0, combo = 0, comboTimer = null;
+let comboTimer = null;
 let pointerDownTime = {}, pointerTimers = {}, keyDownState = {};
 let _keyDownHandler = null, _keyUpHandler = null;
 let _resizeHandler = null;
 let _timers = [];
+var _sc = null;
 
 function getScaleNoteNames() {
     return SCALES[currentScale].map(function (item) { return item.note; });
 }
 
-function resolveCurrentSong() {
-    var song = SONGS[currentSong];
-    if (!song) { resolvedNotes = []; return; }
-    resolvedNotes = MusicSongs.resolveNotes(song.notes, getScaleNoteNames());
-}
-
-function buildSongSelect() {
-    var sel = _container.querySelector('.songbo-song-select'); sel.innerHTML = '';
-    var scaleNames = getScaleNoteNames();
-    MusicSongs.groups.forEach(function (g) {
-        var optgroup = document.createElement('optgroup');
-        optgroup.label = g.label;
-        var hasAny = false;
-        g.keys.forEach(function (k) {
-            var song = MusicSongs.songs[k];
-            // fit 过滤：'piano' 专属的不显示
-            if (song.fit === 'piano') return;
-            var check = MusicSongs.checkPlayable(song.notes, scaleNames);
-            var label = song.name;
-            if (check.unplayable > 0) label += ' ⚠️(' + check.unplayable + '音不可弹)';
-            var opt = document.createElement('option');
-            opt.value = k; opt.textContent = label;
-            opt.title = check.unplayable > 0 ? check.unplayable + '个音在当前音阶下无法弹奏' : '所有音均可弹奏';
-            optgroup.appendChild(opt);
-            hasAny = true;
-        });
-        if (hasAny) sel.appendChild(optgroup);
-    });
+function _populateSongSelect() {
+    var sel = _container.querySelector('.songbo-song-select');
+    ScoreController.populateSongSelect(sel, getScaleNoteNames(), { fitFilter: 'piano', currentValue: _sc ? _sc.getCurrentSongId() : null });
 }
 
 function getBowlSize(i) { return 110 - (i * 40 / 6); }
@@ -263,7 +238,9 @@ function muteAll() {
 
 function renderBowls() {
     const container = _container.querySelector('.songbo-bowl-container-el');
-    const containerSize = container.offsetWidth; container.innerHTML = '';
+    const containerSize = container.offsetWidth;
+    if (containerSize === 0) return;
+    container.innerHTML = '';
     const scale = SCALES[currentScale]; const keys = ['A','S','D','F','J','K','L'];
     scale.forEach((item, i) => {
         const size = getBowlSize(i) * (containerSize / 340);
@@ -300,28 +277,10 @@ function triggerStrike(index, bowlEl) {
     bowlEl.classList.add('strike','glow'); setTimeout(() => bowlEl.classList.remove('glow'), 1500);
     const ripple = document.createElement('div'); ripple.className = 'songbo-ripple';
     bowlEl.appendChild(ripple); setTimeout(() => ripple.remove(), 1200);
-    if (scoreMode) checkScore(index, bowlEl);
+    if (_sc && _sc.isActive()) _sc.check(index);
 }
 
-// ── Score ──
-function checkScore(index, bowlEl) {
-    if (scoreIndex >= resolvedNotes.length) return;
-    var expected = resolvedNotes[scoreIndex];
-    if (expected < 0) { scoreIndex++; updateScoreDisplay(); updateScoreHints(); updateProgress(); if (scoreIndex >= resolvedNotes.length) setTimeout(function(){showCompletion();},600); return; }
-    if (index === expected) {
-        combo++; scoreIndex++;
-        const hint = bowlEl.querySelector('.songbo-hint'); hint.classList.remove('show','blink'); hint.classList.add('correct');
-        setTimeout(() => hint.classList.remove('correct'), 500);
-        if (combo >= 3) showCombo(combo);
-        updateScoreDisplay(); updateScoreHints(); updateProgress();
-        if (scoreIndex >= resolvedNotes.length) setTimeout(function(){showCompletion();},600);
-    } else {
-        combo = 0; bowlEl.classList.remove('wrong-shake'); void bowlEl.offsetWidth; bowlEl.classList.add('wrong-shake');
-        setTimeout(() => bowlEl.classList.remove('wrong-shake'), 400);
-        const correctBowl = _container.querySelectorAll('.songbo-bowl')[expected];
-        if (correctBowl) { const ch = correctBowl.querySelector('.songbo-hint'); ch.classList.remove('blink'); void correctBowl.offsetWidth; ch.classList.add('blink'); setTimeout(() => ch.classList.remove('blink'), 1000); }
-    }
-}
+// ── Score DOM / UI (kept in app, driven by ScoreController callbacks) ──
 
 function showCombo(n) {
     const el = _container.querySelector('.songbo-combo-display-el'); el.textContent = `🕉️ ×${n}`;
@@ -329,15 +288,16 @@ function showCombo(n) {
     clearTimeout(comboTimer); comboTimer = setTimeout(() => el.classList.remove('show'), 1200);
 }
 
-function updateScoreDisplay() {
-    const display = _container.querySelector('.songbo-score-display-el'); const song = SONGS[currentSong]; display.innerHTML = '';
+function buildScoreDOM() {
+    var display = _container.querySelector('.songbo-score-display-el');
+    var song = _sc.getCurrentSong();
+    var resolved = _sc.getResolved();
+    display.innerHTML = '';
     song.notes.forEach(function (n, i) {
         const div = document.createElement('div'); div.className = 'songbo-score-note';
-        if (i < scoreIndex) div.classList.add('played');
-        if (i === scoreIndex) div.classList.add('current');
         if (n === '_') {
             div.textContent = '·';
-        } else if (resolvedNotes[i] === -2) {
+        } else if (resolved[i] === -2) {
             div.textContent = '?'; div.style.opacity = '0.35'; div.title = '当前音阶无法弹奏此音';
         } else {
             div.textContent = n;
@@ -346,23 +306,39 @@ function updateScoreDisplay() {
     });
 }
 
+function updateScoreDisplay() {
+    var idx = _sc.getIndex();
+    const notes = _container.querySelectorAll('.songbo-score-display-el .songbo-score-note');
+    notes.forEach(function (el, i) {
+        el.classList.remove('played', 'current', 'missed');
+        if (i < idx) el.classList.add('played');
+        else if (i === idx) el.classList.add('current');
+    });
+}
+
 function updateScoreHints() {
     _container.querySelectorAll('.songbo-bowl .songbo-hint').forEach(h => h.classList.remove('show','correct','blink'));
-    if (!scoreMode) return;
-    if (scoreIndex >= resolvedNotes.length) return;
+    if (!_sc || !_sc.isActive()) return;
+    var resolved = _sc.getResolved();
+    var idx = _sc.getIndex();
+    if (idx >= resolved.length) return;
     var bowls = _container.querySelectorAll('.songbo-bowl');
-    var idx = resolvedNotes[scoreIndex];
-    if (idx >= 0 && bowls[idx]) bowls[idx].querySelector('.songbo-hint').classList.add('show');
+    var bowlIdx = resolved[idx];
+    if (bowlIdx >= 0 && bowls[bowlIdx]) bowls[bowlIdx].querySelector('.songbo-hint').classList.add('show');
 }
 
-function updateProgress() {
-    if (!resolvedNotes.length) return;
-    _container.querySelector('.songbo-progress-fill-el').style.width = (scoreIndex / resolvedNotes.length * 100) + '%';
+function updateProgress(pct) {
+    _container.querySelector('.songbo-progress-fill-el').style.width = pct + '%';
 }
 
-function resetScore() { scoreIndex = 0; combo = 0; resolveCurrentSong(); updateScoreDisplay(); updateScoreHints(); updateProgress(); }
-function showCompletion() { _container.querySelector('.songbo-completion-overlay-el').classList.add('show'); }
-function closeCompletion() { _container.querySelector('.songbo-completion-overlay-el').classList.remove('show'); resetScore(); }
+function showCompletion() {
+    _container.querySelector('.songbo-completion-overlay-el').classList.add('show');
+    setTimeout(function () { closeCompletion(); }, 3000);
+}
+function closeCompletion() {
+    _container.querySelector('.songbo-completion-overlay-el').classList.remove('show');
+    if (_sc) _sc.reset();
+}
 
 function createParticles() {
     const container = _container.querySelector('.songbo-particles-el'); container.innerHTML = '';
@@ -389,6 +365,73 @@ function init(container) {
     const styleEl = document.createElement('style'); styleEl.textContent = CSS; container.appendChild(styleEl);
     const wrapper = document.createElement('div'); wrapper.className = 'songbo-app';
     wrapper.innerHTML = HTML_TEMPLATE; container.appendChild(wrapper);
+
+    // ── 创建 ScoreController 实例 ──
+    _sc = ScoreController.create({
+        instrument: 'songbo',
+        getScaleNotes: getScaleNoteNames,
+        skipRests: true,
+        defaultSong: null,
+        onToggle: function (active) {
+            _container.querySelector('.songbo-score-toggle').classList.toggle('active', active);
+            _container.querySelector('.songbo-score-panel-el').classList.toggle('open', active);
+            if (!active) updateScoreHints();
+        },
+        onLoad: function (songId, songData, resolved) {
+            buildScoreDOM();
+            updateScoreDisplay();
+            updateScoreHints();
+        },
+        onCorrect: function (info) {
+            // 高亮正确碗的 hint
+            var bowls = _container.querySelectorAll('.songbo-bowl');
+            var bowlIdx = info.noteIndex;
+            if (bowlIdx >= 0 && bowls[bowlIdx]) {
+                var hint = bowls[bowlIdx].querySelector('.songbo-hint');
+                hint.classList.remove('show', 'blink');
+                hint.classList.add('correct');
+                setTimeout(function () { hint.classList.remove('correct'); }, 500);
+            }
+            updateScoreDisplay();
+            updateScoreHints();
+            if (info.isFinished) {
+                setTimeout(function () { showCompletion(); }, 600);
+            }
+        },
+        onWrong: function (info) {
+            // 抖动弹错的碗
+            var bowls = _container.querySelectorAll('.songbo-bowl');
+            var playedBowl = bowls[info.playedIndex];
+            if (playedBowl) {
+                playedBowl.classList.remove('wrong-shake'); void playedBowl.offsetWidth;
+                playedBowl.classList.add('wrong-shake');
+                setTimeout(function () { playedBowl.classList.remove('wrong-shake'); }, 400);
+            }
+            // 闪烁正确碗的提示
+            var expectedIdx = info.expectedIndex;
+            var correctBowl = bowls[expectedIdx];
+            if (correctBowl) {
+                var ch = correctBowl.querySelector('.songbo-hint');
+                ch.classList.remove('blink'); void correctBowl.offsetWidth;
+                ch.classList.add('blink');
+                setTimeout(function () { ch.classList.remove('blink'); }, 1000);
+            }
+        },
+        onFinish: function (stats) {
+            // 完成由 onCorrect 中 isFinished 触发 showCompletion
+        },
+        onReset: function () {
+            buildScoreDOM();
+            updateScoreDisplay();
+            updateScoreHints();
+        },
+        onCombo: function (c) {
+            showCombo(c);
+        },
+        onProgress: function (pct) {
+            updateProgress(pct);
+        }
+    });
 
     // Keyboard handlers
     _keyDownHandler = (e) => {
@@ -417,32 +460,46 @@ function init(container) {
     _resizeHandler = () => { clearTimeout(_resizeHandler._t); _resizeHandler._t = setTimeout(renderBowls, 200); };
 
     // Control events
-    buildSongSelect();
-    container.querySelector('.songbo-scale-select').addEventListener('change', e => { currentScale = e.target.value; muteAll(); renderBowls(); buildSongSelect(); if (scoreMode) resetScore(); });
+    _populateSongSelect();
+    container.querySelector('.songbo-scale-select').addEventListener('change', e => {
+        currentScale = e.target.value;
+        muteAll();
+        renderBowls();
+        _populateSongSelect();
+        if (_sc.isActive()) {
+            _sc.reResolve();
+            _sc.reset();
+        }
+    });
     container.querySelector('.songbo-theme-select').addEventListener('change', e => {
         const val = e.target.value;
         const appEl = container.querySelector('.songbo-app');
         if (val === 'copper') appEl.removeAttribute('data-theme');
         else appEl.setAttribute('data-theme', val);
     });
-    container.querySelector('.songbo-score-toggle').addEventListener('click', e => {
-        scoreMode = !scoreMode; e.target.classList.toggle('active', scoreMode);
-        container.querySelector('.songbo-score-panel-el').classList.toggle('open', scoreMode);
-        if (scoreMode) { resetScore(); updateScoreDisplay(); } else updateScoreHints();
+    container.querySelector('.songbo-score-toggle').addEventListener('click', function () {
+        _sc.toggle();
+        if (_sc.isActive() && !_sc.getCurrentSongId()) {
+            var sel = container.querySelector('.songbo-song-select');
+            if (sel && sel.value) _sc.loadSong(sel.value);
+        }
     });
     container.querySelector('.songbo-mute-btn').addEventListener('click', muteAll);
     container.querySelector('.songbo-song-select').addEventListener('change', e => {
-        currentSong = e.target.value;
+        var songId = e.target.value;
         // 自动切换到建议音阶
-        var song = MusicSongs.songs[currentSong];
+        var song = MusicSongs.songs[songId];
         if (song && song.scaleHint && song.scaleHint.songbo && song.scaleHint.songbo !== currentScale) {
             currentScale = song.scaleHint.songbo;
             container.querySelector('.songbo-scale-select').value = currentScale;
-            muteAll(); renderBowls(); buildSongSelect();
+            muteAll(); renderBowls(); _populateSongSelect();
+            container.querySelector('.songbo-song-select').value = songId;
         }
-        resetScore(); updateScoreDisplay();
+        _sc.loadSong(songId);
     });
-    container.querySelector('.songbo-restart-btn').addEventListener('click', resetScore);
+    container.querySelector('.songbo-restart-btn').addEventListener('click', function () {
+        _sc.reset();
+    });
     container.querySelector('.songbo-continue-btn').addEventListener('click', closeCompletion);
 
     container.addEventListener('touchstart', () => AudioEngine.getContext(), { once: true });
@@ -452,13 +509,15 @@ function init(container) {
 
     return {
         muteAll,
-        attachKeyboard() { document.addEventListener('keydown', _keyDownHandler); document.addEventListener('keyup', _keyUpHandler); window.addEventListener('resize', _resizeHandler); },
+        attachKeyboard() { document.addEventListener('keydown', _keyDownHandler); document.addEventListener('keyup', _keyUpHandler); window.addEventListener('resize', _resizeHandler); renderBowls(); },
         detachKeyboard() { document.removeEventListener('keydown', _keyDownHandler); document.removeEventListener('keyup', _keyUpHandler); window.removeEventListener('resize', _resizeHandler); },
         destroy() {
             this.detachKeyboard();
             // 清理定时器
             _timers.forEach(id => clearTimeout(id));
             _timers = [];
+            // 清理 ScoreController
+            if (_sc) { _sc.destroy(); _sc = null; }
             // 清理音频节点（但不关闭共享的 AudioContext）
             voices.forEach(nodes => nodes.forEach(n => { try{n.stop();}catch(e){} }));
             voices = [];

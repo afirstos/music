@@ -221,7 +221,7 @@ const PianoApp = (function () {
     <div class="piano-score-controls">
         <button class="piano-score-btn" id="scoreToggle">📖 曲谱</button>
         <select class="piano-score-select" id="songSelect">
-            <!-- 动态生成 by buildSongSelect() -->
+            <!-- 动态生成 by ScoreController.populateSongSelect() -->
         </select>
         <button class="piano-score-btn" id="scoreReset" style="display:none">↺</button>
         <div class="piano-octave-control">
@@ -306,8 +306,6 @@ const PianoApp = (function () {
 
     function playNote(frequency) {
         const audioContext = AudioEngine.getContext();
-        // 获取高质量混响（metal 类型适合钢琴）
-        const { dry, convolver } = AudioEngine.getReverb('metal');
         
         if (activeOscillators.length >= MAX_POLYPHONY) {
             const oldest = activeOscillators.shift();
@@ -319,9 +317,8 @@ const PianoApp = (function () {
         lpf.frequency.setValueAtTime(Math.min(frequency * 6, 8000), now);
         lpf.frequency.linearRampToValueAtTime(Math.min(frequency * 3, 4000), now + 0.5);
         lpf.Q.setValueAtTime(0.7, now);
-        // 连接到干声和混响
-        lpf.connect(dry);
-        lpf.connect(convolver);
+        // 连接到 subGain（再由 subGain 分发到 dry/convolver）
+        lpf.connect(_subGain);
 
         const masterGain = audioContext.createGain();
         masterGain.gain.setValueAtTime(0.5, now);
@@ -370,12 +367,8 @@ const PianoApp = (function () {
     // ════════════════════════════════════════════════════════════════
     const SONGS = MusicSongs.songs;
 
-    let scoreMode = false;
-    let currentSong = 'twinkle';
-    let scoreIndex = 0;
-    let scoreNotes = [];
+    // scoreRealNotes 作为本地缓存，从 _sc.getResolved() 同步
     let scoreRealNotes = [];
-    let combo = 0;
 
     function mapSongNoteToCurrent(note) {
         if (note === '_') return null;
@@ -444,11 +437,23 @@ const PianoApp = (function () {
         return id;
     }
 
+    // ── ScoreController 实例 ──
+    var _sc = null;
+
     // ════════════════════════════════════════════════════════════════
     // 初始化
     // ════════════════════════════════════════════════════════════════
+    let _subGain = null;
+
     function init(container) {
         _container = container;
+
+        // 创建钢琴专属子 GainNode，连接到混响链路
+        const { dry, convolver } = AudioEngine.getReverb('metal');
+        _subGain = AudioEngine.createSubGain();
+        _subGain.disconnect();
+        _subGain.connect(dry);
+        _subGain.connect(convolver);
 
         // 1. 注入 CSS
         if (container.parentElement) {
@@ -472,23 +477,104 @@ const PianoApp = (function () {
         pianoContainerEl.addEventListener('touchend', handleTouchEnd, { passive: false });
         pianoContainerEl.addEventListener('touchcancel', handleTouchEnd, { passive: false });
 
-        // 6. 动态生成曲谱下拉
-        buildSongSelect();
-
-        // 7. 按钮事件
-        container.querySelector('#octDown').addEventListener('click', function () { shiftOctave(-1); });
-        container.querySelector('#octUp').addEventListener('click', function () { shiftOctave(1); });
-        container.querySelector('#scoreToggle').addEventListener('click', toggleScoreMode);
-        container.querySelector('#songSelect').addEventListener('change', function (e) { loadSong(e.target.value); });
-        container.querySelector('#scoreReset').addEventListener('click', function () { loadSong(currentSong); });
-        container.querySelector('.piano-reset-btn').addEventListener('click', function () {
-            container.querySelector('.piano-finish-overlay-el').classList.remove('show');
-            scoreIndex = 0; combo = 0;
-            updateScoreUI();
-            highlightNextNote();
+        // 6. 创建 ScoreController 实例
+        _sc = ScoreController.create({
+            instrument: 'piano',
+            getScaleNotes: function () { return null; }, // 钢琴不按音阶过滤
+            skipRests: false,
+            resolveNotes: function (songNotes) {
+                // 钢琴的 resolved 是过滤掉 '_' 后的音名数组
+                return songNotes.filter(function (n) { return n !== '_'; });
+            },
+            defaultSong: 'twinkle',
+            onToggle: function (active) {
+                $id('scoreToggle').classList.toggle('active', active);
+                $id('scoreDisplay').style.display = active ? 'flex' : 'none';
+                $id('scoreProgressWrap').style.display = active ? 'block' : 'none';
+                $id('songSelect').style.display = active ? 'block' : 'none';
+                $id('scoreReset').style.display = active ? 'inline-block' : 'none';
+                if (!active) {
+                    clearScoreHighlights(false);
+                    $id('statusText').textContent = '点击琴键开始演奏';
+                }
+            },
+            onLoad: function (songId, songData, resolved) {
+                // resolved = 过滤掉 '_' 后的音名数组
+                scoreRealNotes = resolved;
+                // 自动调整八度
+                autoShiftOctaveForSong(songId);
+                renderScore(songData);
+                var sd = $id('scoreDisplay');
+                if (sd) sd.scrollLeft = 0;
+                highlightNextNote();
+            },
+            onCorrect: function (info) {
+                clearScoreHighlights(true);
+                var comboText = info.combo >= 3 ? ' \uD83D\uDD25\xD7' + info.combo : '';
+                $id('statusText').textContent = '\uD83C\uDFB5 ' + (info.note || '') + comboText;
+                updateScoreUI();
+                _setTimeout(function () { highlightNextNote(); }, 100);
+                if (info.isFinished) {
+                    var finishText = info.maxCombo >= 10 ? '太棒了！完美演奏！🌟' : '演奏完成，继续加油！';
+                    _container.querySelector('.piano-finish-text-el').textContent = finishText;
+                    _container.querySelector('.piano-finish-overlay-el').classList.add('show');
+                    _setTimeout(function () {
+                        _container.querySelector('.piano-finish-overlay-el').classList.remove('show');
+                        _sc.reset();
+                    }, 3000);
+                }
+            },
+            onWrong: function (info) {
+                var wrongEl = _container.querySelectorAll('.piano-piano-container [data-note="' + info.playedIndex + '"]')[0] || null;
+                if (wrongEl) {
+                    wrongEl.style.animation = 'piano-shake 0.3s ease';
+                    _setTimeout(function () { wrongEl.style.animation = ''; }, 300);
+                }
+                $id('statusText').textContent = '\u2717 应弹 ' + info.expectedNote;
+            },
+            onFinish: function (stats) {
+                // 完成由 onCorrect 中 isFinished 触发
+            },
+            onReset: function () {
+                scoreRealNotes = _sc.getResolved();
+                if (_sc.getCurrentSong()) renderScore(_sc.getCurrentSong());
+                var sd = $id('scoreDisplay');
+                if (sd) sd.scrollLeft = 0;
+                highlightNextNote();
+            },
+            onCombo: function (c) {
+                // combo 显示已集成到 onCorrect 的 statusText 中
+            },
+            onProgress: function (pct) {
+                $id('scoreProgressBar').style.width = pct + '%';
+            }
         });
 
-        // 7. install hint
+        // 7. 动态生成曲谱下拉
+        _populateSongSelect();
+
+        // 8. 按钮事件
+        container.querySelector('#octDown').addEventListener('click', function () { shiftOctave(-1); });
+        container.querySelector('#octUp').addEventListener('click', function () { shiftOctave(1); });
+        container.querySelector('#scoreToggle').addEventListener('click', function () {
+            _sc.toggle();
+            if (_sc.isActive() && !_sc.getCurrentSongId()) {
+                var sel = container.querySelector('#songSelect');
+                if (sel && sel.value) _sc.loadSong(sel.value);
+            }
+        });
+        container.querySelector('#songSelect').addEventListener('change', function (e) {
+            _sc.loadSong(e.target.value);
+        });
+        container.querySelector('#scoreReset').addEventListener('click', function () {
+            _sc.loadSong(_sc.getCurrentSongId());
+        });
+        container.querySelector('.piano-reset-btn').addEventListener('click', function () {
+            container.querySelector('.piano-finish-overlay-el').classList.remove('show');
+            _sc.reset();
+        });
+
+        // 9. install hint
         if (!window.matchMedia('(display-mode: fullscreen)').matches &&
             !window.matchMedia('(display-mode: standalone)').matches &&
             !window.navigator.standalone) {
@@ -496,7 +582,7 @@ const PianoApp = (function () {
             if (ih) ih.style.display = 'block';
         }
 
-        // 8. 存储 keyboard / mouse handlers 到 container 上
+        // 10. 存储 keyboard / mouse handlers 到 container 上
         container._keydownHandler = function (e) {
             if (e.repeat) return;
             const key = e.key.toLowerCase();
@@ -545,6 +631,8 @@ const PianoApp = (function () {
         // 清理定时器
         _timers.forEach(function (id) { clearTimeout(id); });
         _timers = [];
+        // 清理 ScoreController
+        if (_sc) { _sc.destroy(); _sc = null; }
         // 清理音频振荡器（但不关闭共享的 AudioContext）
         activeOscillators.forEach(oscs => {
             try { oscs.forEach(o => o.stop()); } catch (e) { }
@@ -574,46 +662,15 @@ const PianoApp = (function () {
     // ════════════════════════════════════════════════════════════════
     // 曲谱系统函数
     // ════════════════════════════════════════════════════════════════
-    function buildSongSelect() {
-        var sel = $id('songSelect'); sel.innerHTML = '';
-        MusicSongs.groups.forEach(function (g) {
-            var optgroup = document.createElement('optgroup');
-            optgroup.label = g.label;
-            g.keys.forEach(function (k) {
-                var opt = document.createElement('option');
-                opt.value = k; opt.textContent = MusicSongs.songs[k].name;
-                optgroup.appendChild(opt);
-            });
-            sel.appendChild(optgroup);
-        });
+    function _populateSongSelect() {
+        var sel = $id('songSelect');
+        ScoreController.populateSongSelect(sel, null);
     }
 
-    function toggleScoreMode() {
-        scoreMode = !scoreMode;
-        $id('scoreToggle').classList.toggle('active', scoreMode);
-        $id('scoreDisplay').style.display = scoreMode ? 'flex' : 'none';
-        $id('scoreProgressWrap').style.display = scoreMode ? 'block' : 'none';
-        $id('songSelect').style.display = scoreMode ? 'block' : 'none';
-        $id('scoreReset').style.display = scoreMode ? 'inline-block' : 'none';
-        if (scoreMode) loadSong(currentSong);
-        else { clearScoreHighlights(false); $id('statusText').textContent = '点击琴键开始演奏'; }
-    }
-
-    function loadSong(songId) {
-        currentSong = songId;
-        // 自动调整八度以适配曲谱
-        autoShiftOctaveForSong(songId);
-        scoreIndex = 0; combo = 0;
-        scoreNotes = SONGS[songId].notes;
-        scoreRealNotes = scoreNotes.filter(function (n) { return n !== '_'; });
-        renderScore();
-        highlightNextNote();
-    }
-
-    function renderScore() {
+    function renderScore(songData) {
         var scContainer = $id('scoreDisplay');
         scContainer.innerHTML = '';
-        scoreNotes.forEach(function (note) {
+        songData.notes.forEach(function (note) {
             if (note === '_') {
                 var rest = document.createElement('div');
                 rest.className = 'piano-score-note';
@@ -636,11 +693,12 @@ const PianoApp = (function () {
     }
 
     function updateScoreUI() {
+        var idx = _sc ? _sc.getIndex() : 0;
         var allNotes = _container.querySelectorAll('#scoreDisplay .piano-score-note[data-note]');
         allNotes.forEach(function (el, i) {
             el.classList.remove('current', 'played');
-            if (i < scoreIndex) el.classList.add('played');
-            else if (i === scoreIndex) el.classList.add('current');
+            if (i < idx) el.classList.add('played');
+            else if (i === idx) el.classList.add('current');
         });
         var current = (_container.querySelector('#scoreDisplay .piano-score-note.current')) || null;
         if (current) {
@@ -656,44 +714,21 @@ const PianoApp = (function () {
             }
         }
         var total = scoreRealNotes.length;
-        var pct = total > 0 ? (scoreIndex / total) * 100 : 0;
+        var pct = total > 0 ? (idx / total) * 100 : 0;
         $id('scoreProgressBar').style.width = pct + '%';
     }
 
     function checkScoreInput(note) {
-        if (!scoreMode) return;
-        if (scoreIndex >= scoreRealNotes.length) {
-            $id('statusText').textContent = '\uD83C\uDF89 太棒了！全部弹完！最高连击 ' + combo;
-            clearScoreHighlights(true);
-            var finishText = combo >= 10 ? '太棒了！完美演奏！🌟' : '演奏完成，继续加油！';
-            _container.querySelector('.piano-finish-text-el').textContent = finishText;
-            _container.querySelector('.piano-finish-overlay-el').classList.add('show');
-            return;
-        }
-        var targetNote = scoreRealNotes[scoreIndex];
-        if (note === targetNote) {
-            combo++;
-            clearScoreHighlights(true);
-            scoreIndex++;
-            var comboText = combo >= 3 ? ' \uD83D\uDD25\xD7' + combo : '';
-            $id('statusText').textContent = '\uD83C\uDFB5 ' + note + comboText;
-            updateScoreUI();
-            _setTimeout(function () { highlightNextNote(); }, 100);
-        } else {
-            combo = 0;
-            var wrongEl = _container.querySelectorAll('.piano-piano-container [data-note="' + note + '"]')[0] || null;
-            if (wrongEl) {
-                wrongEl.style.animation = 'piano-shake 0.3s ease';
-                _setTimeout(function () { wrongEl.style.animation = ''; }, 300);
-            }
-            $id('statusText').textContent = '\u2717 应弹 ' + targetNote;
-        }
+        if (!_sc || !_sc.isActive()) return;
+        _sc.check(note, 'name');
     }
 
     function highlightNextNote() {
         clearScoreHighlights(false);
-        if (scoreIndex >= scoreRealNotes.length) return;
-        var nextNote = scoreRealNotes[scoreIndex];
+        if (!_sc || !_sc.isActive()) return;
+        var idx = _sc.getIndex();
+        if (idx >= scoreRealNotes.length) return;
+        var nextNote = scoreRealNotes[idx];
         var mappedNote = mapSongNoteToCurrent(nextNote);
         if (mappedNote) {
             var el = _container.querySelectorAll('.piano-piano-container [data-note="' + mappedNote + '"]')[0] || null;
@@ -762,7 +797,7 @@ const PianoApp = (function () {
 
         $id('octaveLabel').textContent = 'C' + baseOctave + ' \u2013 B' + (baseOctave + 1);
         buildKeyboardMap();
-        if (scoreMode) highlightNextNote();
+        if (_sc && _sc.isActive()) highlightNextNote();
     }
 
     function buildKeyboardMap() {
@@ -856,10 +891,21 @@ const PianoApp = (function () {
     }
 
     function muteAll() {
-        activeOscillators.forEach(function (oscs) {
-            try { oscs.forEach(function (o) { o.stop(); }); } catch (e) { }
-        });
-        activeOscillators = [];
+        const ctx = AudioEngine.getContext();
+        if (!ctx || !_subGain) return;
+        const now = ctx.currentTime;
+        const savedVol = _subGain.gain.value;
+        _subGain.gain.cancelScheduledValues(now);
+        _subGain.gain.setValueAtTime(savedVol, now);
+        _subGain.gain.linearRampToValueAtTime(0, now + 0.3);
+        _setTimeout(function() {
+            // 停止所有振荡器
+            activeOscillators.forEach(function(oscs) { try { oscs.forEach(function(o) { o.stop(); }); } catch(e) {} });
+            activeOscillators = [];
+            // 恢复音量
+            _subGain.gain.cancelScheduledValues(ctx.currentTime);
+            _subGain.gain.setValueAtTime(savedVol, ctx.currentTime);
+        }, 400);
     }
 
     return { init: init, destroy: destroy, muteAll: muteAll };
